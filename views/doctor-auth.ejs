@@ -1,0 +1,77 @@
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="auth-page wrap">
+  <section class="auth-aside">
+    <div class="eyebrow">CARENEST DOCTOR PORTAL</div>
+    <h1><%= mode === 'register' ? 'Create your professional profile.' : 'Welcome back, doctor.' %></h1>
+    <p>Manage your professional details, publish your availability, and let patients book an open appointment time.</p>
+    <div class="auth-points">
+      <span>✓ Doctor-only sign in</span>
+      <span>✓ Manage your weekly schedule</span>
+      <span>✓ Patients book your available slots</span>
+    </div>
+  </section>
+
+  <section class="auth-card">
+    <div class="auth-tabs">
+      <a class="<%= mode === 'login' ? 'selected' : '' %>" href="/doctor/login">Doctor sign in</a>
+      <a class="<%= mode === 'register' ? 'selected' : '' %>" href="/doctor/register">Register</a>
+    </div>
+
+    <form
+      action="<%= mode === 'register' ? '/doctor/register' : '/doctor/login' %>"
+      method="post"
+      <%= mode === 'register' ? 'enctype="multipart/form-data"' : '' %>
+      class="stack-form"
+    >
+      <% if (mode === 'register') { %>
+        <label for="fullName">Doctor Name</label>
+        <input id="fullName" name="fullName" autocomplete="name" minlength="2" maxlength="80" required>
+
+        <label for="phone">Phone number</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel" minlength="7" maxlength="18" required>
+
+        <label for="specialty">Specialty</label>
+        <input id="specialty" name="specialty" placeholder="e.g. Cardiology" minlength="2" maxlength="100" required>
+
+        <label for="education">Education and qualifications</label>
+        <textarea id="education" name="education" rows="3" maxlength="500" placeholder="e.g. MBBS, MD Cardiology — University name" required></textarea>
+
+        <label for="experience">Years of experience</label>
+        <input id="experience" name="experience" type="number" min="0" max="60" value="0" required>
+
+        <label for="profileImage">Profile photo (JPG, PNG or WebP, up to 5 MB)</label>
+        <input id="profileImage" name="profileImage" type="file" accept="image/jpeg,image/png,image/webp">
+      <% } %>
+
+      <label for="email">Email address</label>
+      <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+
+      <label for="password">Password</label>
+      <input
+        id="password"
+        name="password"
+        type="password"
+        autocomplete="<%= mode === 'register' ? 'new-password' : 'current-password' %>"
+        minlength="<%= mode === 'register' ? '8' : '1' %>"
+        maxlength="128"
+        required
+      >
+
+      <% if (mode === 'register') { %>
+        <label for="confirmPassword">Confirm password</label>
+        <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        <p class="form-note">Your account role is set to Doctor by the portal. After registration, sign in and set your appointment schedule.</p>
+      <% } %>
+
+      <button class="btn btn-full" type="submit">
+        <%= mode === 'register' ? 'Create doctor account' : 'Sign in to doctor portal' %>
+        <span>→</span>
+      </button>
+    </form>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

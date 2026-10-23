@@ -1,0 +1,169 @@
+<%- include('partials/head', {title}) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main>
+  <!-- Hero Section -->
+  <section class="hero wrap">
+    <div class="hero-copy">
+      <div class="eyebrow">
+        <span class="status-dot"></span> A calmer way to care
+      </div>
+      <h1>Healthcare that feels <em>closer.</em></h1>
+      <p class="hero-lead">
+        Book appointments, keep your family’s care organised, and get clear updates — all in one friendly place.
+      </p>
+      
+      <div class="hero-actions">
+        <a class="btn" href="<%= currentUser ? '/appointments/new' : '/register' %>">
+          Book an appointment <span>↗</span>
+        </a>
+        <a class="btn btn-outline" href="/doctors">Meet our doctors</a>
+      </div>
+      
+      <div class="hero-trust">
+        <span>✓ Easy to use</span>
+        <span>✓ Family-friendly</span>
+        <span>✓ Service health monitored</span>
+      </div>
+    </div>
+
+    <div class="hero-art">
+      <div class="art-orbit orbit-one"></div>
+      <div class="art-orbit orbit-two"></div>
+      
+      <div class="doctor-illustration">
+        <div class="illustration-face">☺</div>
+        <div class="illustration-coat"><span>✚</span></div>
+      </div>
+      
+      <div class="floating-card float-card-top">
+        <span class="float-icon">♡</span>
+        <div>
+          <b>Care, made simple</b>
+          <small>One step at a time</small>
+        </div>
+      </div>
+      
+      <div class="floating-card float-card-bottom">
+        <span class="check-bubble">✓</span>
+        <div>
+          <b>You're all set</b>
+          <small>Appointment tools in one place</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Actions Strip -->
+  <section class="quick-strip">
+    <div class="wrap quick-grid">
+     <a href="<%= currentUser && currentUser.role === 'patient' ? '/appointments/new' : '/login' %>">
+        <span class="quick-icon">▦</span>
+        <span>
+          <b>Book a visit</b>
+          <small>Choose a doctor and time</small>
+        </span>
+        <span class="arrow">↗</span>
+      </a>
+      
+      <a class="btn" href="<%= currentUser && currentUser.role === 'patient' ? '/appointments/new' : '/login' %>">
+        <span class="quick-icon">♡</span>
+        <span>
+          <b>My appointments</b>
+          <small>Review or cancel bookings</small>
+        </span>
+        <span class="arrow">↗</span>
+      </a>
+      
+      <a href="/queue">
+        <span class="quick-icon">◷</span>
+        <span>
+          <b>Queue & waiting list</b>
+          <small>See your waiting position</small>
+        </span>
+        <span class="arrow">↗</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="section wrap">
+    <div class="section-heading">
+      <div>
+        <div class="eyebrow">THE CARENEST DIFFERENCE</div>
+        <h2>Thoughtful care, <em>every step.</em></h2>
+      </div>
+      <p>Designed to make common hospital tasks less stressful — especially for older adults and families helping them.</p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature-card">
+        <span class="feature-icon lilac">♡</span>
+        <h3>Care for the whole family</h3>
+        <p>Book an appointment for yourself or a family member with a clear, simple form.</p>
+      </article>
+
+      <article class="feature-card">
+        <span class="feature-icon peach">⌁</span>
+        <h3>Easy to understand</h3>
+        <p>Readable pages, clear feedback and optional voice input help you find your way.</p>
+      </article>
+
+      <article class="feature-card">
+        <span class="feature-icon mint">⟳</span>
+        <h3>Resilient by design</h3>
+        <p>A health monitor records service problems and uses safe recovery behaviours where possible.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Doctors Section -->
+  <section class="doctor-section">
+    <div class="wrap">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">MEET THE CARE TEAM</div>
+          <h2>Here for your <em>wellbeing.</em></h2>
+        </div>
+        <a class="text-link" href="/doctors">View all doctors ↗</a>
+      </div>
+
+      <div class="doctor-grid">
+        <% if (doctors.length) { %>
+          <% doctors.forEach((doctor, i) => { %>
+            <article class="doctor-card">
+              <div class="doctor-avatar avatar-<%= i % 4 %>">
+                <%= doctor.name.split(' ').filter(Boolean).slice(1).map(n => n[0]).join('').slice(0, 2) %>
+              </div>
+              <div>
+                <h3><%= doctor.name %></h3>
+                <p class="doctor-specialty"><%= doctor.specialty %></p>
+                <p class="muted"><%= doctor.experience %> years experience</p>
+                <p class="doctor-hours">◷ <%= doctor.availability %></p>
+              </div>
+            </article>
+          <% }) %>
+        <% } else { %>
+          <div class="empty-state">
+            <h3>Your care team is being prepared</h3>
+            <p>Sign in as an administrator and seed the demo doctor list from the admin dashboard.</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <!-- Healing / Resilience Banner -->
+  <section class="healing-banner wrap">
+    <div class="healing-symbol">⟳</div>
+    <div>
+      <div class="eyebrow">BUILT-IN RESILIENCE</div>
+      <h2>A service that watches out for itself.</h2>
+      <p>CareNest checks its database connection and resource usage, logs incidents, and presents safe fallback messages when a service is unavailable.</p>
+    </div>
+    <a class="btn btn-light" href="/self-healing">Explore self-healing ↗</a>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

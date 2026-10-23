@@ -1,0 +1,103 @@
+
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">YOUR VISITS</div>
+      <h1>My appointments.</h1>
+      <p>Review upcoming visits and manage your bookings.</p>
+    </div>
+    <a class="btn" href="/appointments/new">+ Book appointment</a>
+  </div>
+
+  <section class="panel">
+    <% if (appointments.length) { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking ID</th>
+              <th>Doctor</th>
+              <th>Patient</th>
+              <th>Date &amp; time</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <% appointments.forEach(a => { %>
+              <tr>
+                <td>
+                  <b><%= a.bookingId || 'Not available' %></b>
+                </td>
+
+                <td>
+                  <b><%= a.doctorId ? a.doctorId.name : 'Care team' %></b>
+                  <small><%= a.doctorId ? a.doctorId.specialty : '' %></small>
+                </td>
+
+                <td>
+                  <%= a.patientName %>
+                  <small><%= a.relationship %></small>
+                </td>
+
+                <td>
+                  <%= new Date(a.appointmentDate).toLocaleString() %>
+                </td>
+
+                <td>
+                  <span class="pill pill-<%= a.status %>">
+                    <%= a.status %>
+                  </span>
+                </td>
+
+                <td>
+                  <% if (a.status === 'booked' &&
+                    new Date(a.appointmentDate) > new Date()) { %>
+
+                    <a
+                      class="btn btn-small"
+                      href="/appointments/<%= a._id %>/reschedule"
+                    >
+                      Reschedule
+                    </a>
+
+                    <form
+                      action="/appointments/<%= a._id %>/cancel"
+                      method="post"
+                      onsubmit="return confirm('Cancel this appointment?')"
+                    >
+                      <button
+                        class="btn btn-small btn-outline"
+                        type="submit"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+    <% } else { %>
+      <div class="empty-state">
+        <div class="empty-icon">♡</div>
+        <h3>Your care journey starts here</h3>
+        <p>No appointments have been booked yet.</p>
+        <a class="btn" href="/appointments/new">Book an appointment</a>
+      </div>
+    <% } %>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

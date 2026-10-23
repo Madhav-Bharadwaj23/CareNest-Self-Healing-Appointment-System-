@@ -1,0 +1,111 @@
+
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <section class="page-heading">
+    <div>
+      <div class="eyebrow">DOCTOR PORTAL</div>
+      <h1>Manage Availability</h1>
+      <p class="muted">Set your clinic working days and appointment hours.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Doctor Profile</h2>
+    <p><strong>Name:</strong> <%= doctor.name %></p>
+    <p><strong>Specialty:</strong> <%= doctor.specialty %></p>
+    <% if (doctor.education) { %>
+      <p><strong>Education:</strong> <%= doctor.education %></p>
+    <% } %>
+    <% if (doctor.profileImage) { %>
+      <img
+        src="<%= doctor.profileImage %>"
+        alt="Profile photo of <%= doctor.name %>"
+        class="mt-3 h-24 w-24 rounded-xl object-cover"
+      >
+    <% } %>
+  </section>
+
+  <section class="panel">
+    <h2>Weekly Schedule</h2>
+
+    <form action="/doctor/schedule" method="POST">
+      <p><strong>Select working days</strong></p>
+
+      <% const days = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday'
+      ]; %>
+
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <% days.forEach(day => { %>
+          <label class="flex items-center gap-2 rounded-lg border border-slate-200 p-3">
+            <input
+              type="checkbox"
+              name="workingDays"
+              value="<%= day %>"
+              <%= (doctor.workingDays || []).includes(day) ? 'checked' : '' %>
+            >
+            <span><%= day %></span>
+          </label>
+        <% }) %>
+      </div>
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="startTime">Clinic start time</label>
+          <input
+            id="startTime"
+            type="time"
+            name="startTime"
+            value="<%= doctor.startTime || '' %>"
+            required
+            class="w-full rounded-lg border border-slate-300 p-3"
+          >
+        </div>
+
+        <div>
+          <label for="endTime">Clinic end time</label>
+          <input
+            id="endTime"
+            type="time"
+            name="endTime"
+            value="<%= doctor.endTime || '' %>"
+            required
+            class="w-full rounded-lg border border-slate-300 p-3"
+          >
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <label for="slotTimes"><strong>Appointment slot times</strong> (optional)</label>
+        <input
+          id="slotTimes"
+          type="text"
+          name="slotTimes"
+          value="<%= (doctor.slotTimes || []).join(', ') %>"
+          placeholder="09:00, 10:00, 11:00, 14:00, 15:00"
+          class="w-full rounded-lg border border-slate-300 p-3"
+        >
+        <p class="mt-2 text-sm text-slate-500">
+          Enter one-hour appointment start times patients may book, separated by commas, using 24-hour time.
+          Leave blank to offer hourly slots between the clinic start and end times.
+        </p>
+      </div>
+
+      <div class="mt-6 flex flex-wrap gap-3">
+        <button type="submit" class="btn">Save Schedule</button>
+        <a href="/doctor/dashboard" class="btn">Back to Dashboard</a>
+      </div>
+    </form>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

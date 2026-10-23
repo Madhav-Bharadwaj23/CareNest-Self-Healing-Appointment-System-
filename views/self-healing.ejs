@@ -1,0 +1,179 @@
+<%
+  const scenarioStatus = name => {
+    const entry = latestScenarioStatuses[name];
+    if (!entry) return 'Not tested';
+    if (entry.status === 'passed') return 'Healthy';
+    if (entry.status === 'failed') return 'Issue detected';
+    return entry.status;
+  };
+  const scenarioTone = name => {
+    const status = scenarioStatus(name);
+    return status === 'Healthy'
+      ? 'text-emerald-700'
+      : status === 'Issue detected'
+        ? 'text-red-700'
+        : 'text-slate-500';
+  };
+  const scenarioCards = [
+    { id: 'database-reconnect', name: 'Database reconnect', service: 'MongoDB', description: 'Closes and reconnects an isolated test DB connection; never disconnects the live app DB.' },
+    { id: 'doctor-api', name: 'Doctor directory API', service: 'Express', description: 'Requests the real doctor directory page and validates its response.' },
+    { id: 'network-connectivity', name: 'Network connectivity', service: 'Browser + health endpoint', description: 'Checks browser online state and makes a real health endpoint request; does not turn off a network.' },
+    { id: 'booking-idempotency', name: 'Duplicate booking protection', service: 'MongoDB booking index', description: 'Attempts a duplicate request ID in an isolated test collection and verifies it is rejected.' },
+    { id: 'notification-adapter', name: 'Notification adapter', service: 'SMS', description: 'Runs the notification adapter in dry-run mode; no SMS is sent.' },
+    { id: 'appointment-reconciliation', name: 'Data reconciliation', service: 'Appointment integrity', description: 'Repairs a stale lock in isolated test records and leaves unknown locks for review.' }
+  ];
+  const statusClass = status => status === 'passed'
+    ? 'pill pill-booked'
+    : status === 'failed'
+      ? 'pill pill-cancelled'
+      : 'pill pill-warning';
+%>
+<style>
+  .scenario-live-status{display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.25rem .7rem;font-size:.78rem;font-weight:700;white-space:nowrap}
+  .scenario-live-status::before{width:.55rem;height:.55rem;border-radius:50%;background:currentColor;content:""}
+  .scenario-live-status.is-gray{background:#f1f5f9;color:#64748b}
+  .scenario-live-status.is-yellow{background:#fef3c7;color:#a16207}
+  .scenario-live-status.is-green{background:#dcfce7;color:#15803d}
+  .scenario-live-status.is-red{background:#fee2e2;color:#b91c1c}
+</style>
+<%- include('partials/head',{title}) %>
+<%- include('partials/nav') %>
+<main class="wrap page-main">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">PROTECTED ADMIN PANEL</div>
+      <h1>Self-healing monitor.</h1>
+      <p>Service status, individual checks, and a complete execution history.</p>
+    </div>
+    <form action="/self-healing/logout" method="post">
+      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+      <button class="btn btn-outline" type="submit">Log out</button>
+    </form>
+  </div>
+
+  <section aria-label="Service status" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>Database (MongoDB)</small><strong class="block"><%= health.database === 'connected' ? 'Healthy' : 'Disconnected' %></strong><p>Live app connection</p></div>
+      <span class="h-3 w-3 shrink-0 rounded-full <%= health.database === 'connected' ? 'bg-emerald-500' : 'bg-red-500' %>" aria-label="<%= health.database %>"></span>
+    </article>
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>Doctor directory (Express)</small><strong data-service-status="doctor-api" class="block <%= scenarioTone('doctor-api') %>"><%= scenarioStatus('doctor-api') %></strong><p>Latest real endpoint check</p></div>
+      <span data-service-light="doctor-api" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('doctor-api') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('doctor-api') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
+    </article>
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>Notifications (SMS)</small><strong data-service-status="notification-adapter" class="block <%= scenarioTone('notification-adapter') %>"><%= scenarioStatus('notification-adapter') %></strong><p>Adapter is dry-run only</p></div>
+      <span data-service-light="notification-adapter" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('notification-adapter') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('notification-adapter') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
+    </article>
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>Data reconciliation</small><strong data-service-status="appointment-reconciliation" class="block <%= scenarioTone('appointment-reconciliation') %>"><%= scenarioStatus('appointment-reconciliation') %></strong><p>Isolated integrity test</p></div>
+      <span data-service-light="appointment-reconciliation" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('appointment-reconciliation') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('appointment-reconciliation') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
+    </article>
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>Isolated DB recovery test</small><strong data-service-status="database-reconnect" class="block <%= scenarioTone('database-reconnect') %>"><%= scenarioStatus('database-reconnect') %></strong><p>Separate test connection only</p></div>
+      <span data-service-light="database-reconnect" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('database-reconnect') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('database-reconnect') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
+    </article>
+    <article class="health-card"><small>Host memory</small><strong><%= health.memoryPercent %>%</strong><p>Current usage estimate</p></article>
+    <article class="health-card"><small>Overall monitor</small><strong><%= health.status %></strong><p>Last check: <%= health.checkedAt %></p></article>
+  </section>
+
+  <section class="panel mt-6">
+    <div class="panel-heading">
+      <div>
+        <h2>Test each scenario</h2>
+        <p>Run a single check or execute the complete suite.</p>
+      </div>
+      <form action="/self-healing/run" method="post" class="scenario-run-form" data-scenario="all">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="browserOnline" value="false">
+        <button class="btn" type="submit">⚡ Run all 6 scenarios</button>
+      </form>
+    </div>
+    <div class="warning-note mb-5">
+      Status colors describe the scenario process: red = detecting/test started, yellow = diagnosing or recovering, green = passed verification. They do not falsely indicate a live outage. The live database is never disconnected; database, duplicate-booking, and reconciliation tests use isolated test records. Network is checked, not deliberately interrupted; SMS stays in dry-run mode.
+    </div>
+    <div id="healingRunPanel" class="hidden rounded-2xl border border-teal-200 bg-teal-50 p-5" aria-live="polite">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 id="healingRunTitle">Preparing scenario…</h3>
+        <strong id="healingTimer" class="text-teal-800">0 / 10 seconds</strong>
+      </div>
+      <div class="mt-3 h-2 overflow-hidden rounded-full bg-teal-100">
+        <div id="healingProgressBar" class="h-full w-0 rounded-full bg-teal-600 transition-all duration-500"></div>
+      </div>
+      <div id="healingLiveLog" class="mt-4 max-h-64 space-y-2 overflow-y-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-emerald-200" role="log" aria-relevant="additions"></div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% scenarioCards.forEach(scenario => { %>
+        <article class="health-card flex flex-col justify-between gap-4">
+          <div>
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <small><%= scenario.service %></small>
+                <h3 class="mt-1"><%= scenario.name %></h3>
+              </div>
+              <span class="<%= statusClass(latestScenarioStatuses[scenario.id]?.status) %>" data-scenario-badge="<%= scenario.id %>"><%= scenarioStatus(scenario.id) %></span>
+            </div>
+            <p class="mt-3"><%= scenario.description %></p>
+          </div>
+          <form action="/self-healing/run/<%= scenario.id %>" method="post" class="scenario-run-form" data-scenario="<%= scenario.id %>">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <input type="hidden" name="browserOnline" value="false">
+            <button class="btn btn-outline btn-small" type="submit">Run this scenario</button>
+          </form>
+        </article>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="panel mt-6">
+    <div class="panel-heading">
+      <div><h2>Scenario execution log</h2><p>Latest first; each check result is recorded on the server.</p></div>
+    </div>
+    <% if (scenarioLogs.length) { %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Scenario</th><th>Status</th><th>Details</th></tr></thead>
+          <tbody>
+            <% scenarioLogs.forEach(entry => { %>
+              <tr>
+                <td><%= new Date(entry.timestamp).toLocaleString() %></td>
+                <td><%= entry.scenario %></td>
+                <td><span class="<%= statusClass(entry.status) %>"><%= entry.status %></span></td>
+                <td><%= entry.message %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <p class="muted">No scenario runs yet. Run a check to create the first log entry.</p>
+    <% } %>
+  </section>
+
+  <section class="panel mt-6">
+    <div class="panel-heading">
+      <div><h2>Recent monitor incidents</h2><p>Background health monitor history.</p></div>
+    </div>
+    <% if (incidents.length) { %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Source</th><th>Severity</th><th>Details</th><th>State</th></tr></thead>
+          <tbody>
+            <% incidents.forEach(incident => { %>
+              <tr>
+                <td><%= new Date(incident.createdAt).toLocaleString() %></td>
+                <td><%= incident.source %></td>
+                <td><span class="pill pill-<%= incident.severity %>"><%= incident.severity %></span></td>
+                <td><b><%= incident.message %></b><small><%= incident.recoveryAction %></small></td>
+                <td><%= incident.resolved ? 'Reviewed' : 'Open' %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <p class="muted">No incidents recorded yet.</p>
+    <% } %>
+  </section>
+</main>
+<%- include('partials/footer') %>

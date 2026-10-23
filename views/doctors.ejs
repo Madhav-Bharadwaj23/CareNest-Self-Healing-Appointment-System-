@@ -1,0 +1,56 @@
+<%- include('partials/head',{title}) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">OUR CARE TEAM</div>
+      <h1>Meet your doctors.</h1>
+      <p>Review doctor profiles and choose a specialist for your visit.</p>
+    </div>
+    <% if (currentUser?.role === 'patient') { %>
+      <a class="btn" href="/appointments/new">Book a visit</a>
+    <% } else if (!currentUser) { %>
+      <a class="btn" href="/login">Sign in to book</a>
+    <% } %>
+  </div>
+
+  <div class="doctor-grid doctor-grid-page">
+    <% if (doctors.length) { %>
+      <% doctors.forEach((doctor, index) => { %>
+        <article class="doctor-card">
+          <% if (doctor.profileImage) { %>
+            <img
+              src="<%= doctor.profileImage %>"
+              alt="Profile photo of <%= doctor.name %>"
+              class="doctor-avatar avatar-<%= index % 4 %>"
+              style="object-fit: cover"
+              loading="lazy"
+            >
+          <% } else { %>
+            <div class="doctor-avatar avatar-<%= index % 4 %>">
+              <%= doctor.name.split(' ').filter(Boolean).slice(1).map(name => name[0]).join('').slice(0, 2) %>
+            </div>
+          <% } %>
+          <div>
+            <h3><%= doctor.name %></h3>
+            <p class="doctor-specialty"><%= doctor.specialty %></p>
+            <p class="muted"><%= doctor.experience %> years experience</p>
+            <% if (doctor.education) { %>
+              <p class="muted"><%= doctor.education %></p>
+            <% } %>
+            <p class="doctor-hours">◷ <%= doctor.availability %></p>
+          </div>
+        </article>
+      <% }) %>
+    <% } else { %>
+      <div class="empty-state">
+        <h3>Doctor directory not set up yet</h3>
+        <p>Doctors can register through the doctor portal.</p>
+      </div>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

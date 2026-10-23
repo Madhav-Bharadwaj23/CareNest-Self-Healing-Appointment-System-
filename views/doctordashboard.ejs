@@ -1,0 +1,107 @@
+
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <section class="page-heading">
+    <div>
+      <div class="eyebrow">DOCTOR WORKSPACE</div>
+      <h1>Welcome, <%= doctor.name %></h1>
+      <p>
+        <%= doctor.specialty %> ·
+        <%= doctor.experience %> years of experience
+      </p>
+      <% if (doctor.education) { %>
+        <p><%= doctor.education %></p>
+      <% } %>
+    </div>
+    <% if (doctor.profileImage) { %>
+      <img
+        src="<%= doctor.profileImage %>"
+        alt="Profile photo of <%= doctor.name %>"
+        class="h-20 w-20 rounded-2xl object-cover"
+      >
+    <% } %>
+    <span class="health-badge health-healthy">
+      <i></i> Doctor Portal
+    </span>
+  </section>
+
+  <section class="stats-grid">
+    <article class="stat-card">
+      <small>Today's appointments</small>
+      <strong><%= todayAppointments.length %></strong>
+      <span>Scheduled for today</span>
+    </article>
+
+    <article class="stat-card">
+      <small>All appointments</small>
+      <strong><%= appointments.length %></strong>
+      <span>Latest 100 records</span>
+    </article>
+
+    <article class="stat-card">
+      <small>Specialty</small>
+      <strong style="font-size: 20px;">
+        <%= doctor.specialty %>
+      </strong>
+      <span>Your department</span>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Appointment schedule</h2>
+        <p>Your upcoming and previous appointments.</p>
+      </div>
+    </div>
+
+    <% if (appointments.length) { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date and time</th>
+              <th>Patient</th>
+              <th>Reason</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% appointments.forEach(appointment => { %>
+              <tr>
+                <td>
+                  <%= new Date(
+                    appointment.appointmentDate
+                  ).toLocaleString('en-IN') %>
+                </td>
+                <td>
+                  <%= appointment.patientName %>
+                  <% if (appointment.patientId) { %>
+                    <small>
+                      <%= appointment.patientId.email %>
+                    </small>
+                  <% } %>
+                </td>
+                <td><%= appointment.reason %></td>
+                <td>
+                  <span class="pill">
+                    <%= appointment.status %>
+                  </span>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <p class="muted">
+        No appointments are linked to your account yet.
+      </p>
+    <% } %>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,35 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f766e">
+
+  <title><%= title || "CareNest" %></title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; }
+    h1, h2, h3, .brand-name { font-family: 'Manrope', sans-serif; }
+    html { scroll-behavior: smooth; }
+    .doctor-card { transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
+    .doctor-card:hover { transform: translateY(-3px); }
+    .doctor-card.selected { border-color: #0d9488; box-shadow: 0 0 0 2px rgba(13,148,136,.13), 0 12px 28px rgba(15,118,110,.07); }
+    .slot-button { transition: all .15s ease; }
+    .slot-button.active { background: #0f766e; color: white; border-color: #0f766e; }
+    .calendar-day.active { background: #0f766e; color: white; border-color: #0f766e; }
+    .soft-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .soft-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#f6f8fb] text-slate-800 antialiased">

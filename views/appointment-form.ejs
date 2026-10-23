@@ -1,0 +1,179 @@
+<%- include('partials/head',{title}) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main narrow-main">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">YOUR NEXT STEP</div>
+      <h1><%= appointment ? 'Reschedule appointment' : 'Book an appointment' %></h1>
+      <p><%= appointment ? 'Choose any active doctor and an available time. Patient details will remain unchanged.' : 'Choose from the appointment times your doctor has made available.' %></p>
+    </div>
+  </div>
+
+  <div class="panel form-panel">
+    <form
+      action="<%= appointment ? `/appointments/${appointment._id}/reschedule` : '/appointments' %>"
+      method="post"
+      class="stack-form"
+      id="appointmentForm"
+      data-appointment-id="<%= appointment ? appointment._id : '' %>"
+      data-appointment-date="<%= appointment ? appointment.appointmentDate.toISOString() : '' %>"
+    >
+      <input id="appointmentDate" name="appointmentDate" type="datetime-local" hidden>
+
+      <label for="patientName">Who is this appointment for?</label>
+      <input id="patientName" name="patientName" value="<%= appointment ? appointment.patientName : currentUser.fullName %>" required maxlength="100" <%= appointment ? 'readonly' : '' %>>
+
+      <label for="relationship">Relationship to you</label>
+      <select name="relationship" id="relationship" <%= appointment ? 'disabled' : '' %>>
+        <% const relationship = appointment ? appointment.relationship : 'Self'; %>
+        <% ['Self', 'Parent', 'Spouse', 'Child', 'Other family member'].forEach(value => { %>
+          <option <%= relationship === value ? 'selected' : '' %>><%= value %></option>
+        <% }) %>
+      </select>
+
+      <label for="doctorId">Doctor</label>
+      <select id="doctorId" name="doctorId" required>
+        <option value="">Select a doctor</option>
+        <% doctors.forEach(d => { %>
+          <option value="<%= d._id %>" <%= appointment && String(appointment.doctorId) === String(d._id) ? 'selected' : '' %>>
+            <%= d.name %> — <%= d.specialty %><%= d.education ? ` · ${d.education}` : '' %>
+          </option>
+        <% }) %>
+      </select>
+      <% if (!doctors.length) { %>
+        <p class="form-note">No doctors are available yet. Ask an administrator to seed the doctor list.</p>
+      <% } %>
+
+      <label for="appointmentDay">Date</label>
+      <input id="appointmentDay" name="appointmentDay" type="date" required>
+
+      <label for="appointmentTime">Available appointment time</label>
+      <select id="appointmentTime" name="appointmentTime" required disabled>
+        <option value="">Choose a doctor and date first</option>
+      </select>
+      <p id="availabilityMessage" class="form-note" role="status" aria-live="polite">
+        Select a doctor and date to see available times.
+      </p>
+
+      <label for="reason">Reason for visit</label>
+      <textarea id="reason" name="reason" rows="3" placeholder="Briefly describe what you need help with" <%= appointment ? 'readonly' : '' %>><%= appointment ? appointment.reason : '' %></textarea>
+
+      <% if (!appointment) { %>
+        <div class="voice-row">
+          <button type="button" class="btn btn-outline btn-small" id="voiceReason">Use voice to fill reason</button>
+          <span id="voiceStatus" class="muted">Optional voice input, if supported by your browser.</span>
+        </div>
+      <% } %>
+
+      <button class="btn btn-full" type="submit" <%= !doctors.length ? 'disabled' : '' %>>
+        <%= appointment ? 'Reschedule appointment' : 'Book selected time' %> <span>→</span>
+      </button>
+      <p class="form-note">Only open times in the doctor's schedule can be booked. Please contact the hospital for urgent needs.</p>
+    </form>
+  </div>
+</main>
+
+<script>
+  (() => {
+    const doctor = document.getElementById('doctorId');
+    const day = document.getElementById('appointmentDay');
+    const time = document.getElementById('appointmentTime');
+    const appointmentDate = document.getElementById('appointmentDate');
+    const message = document.getElementById('availabilityMessage');
+    const form = document.getElementById('appointmentForm');
+    const appointmentId = form.dataset.appointmentId;
+    const previousDate = form.dataset.appointmentDate
+      ? new Date(form.dataset.appointmentDate)
+      : null;
+    const minDate = new Date();
+    minDate.setMinutes(minDate.getMinutes() - minDate.getTimezoneOffset());
+    day.min = minDate.toISOString().slice(0, 10);
+
+    async function loadAvailableTimes(preferredTime = '') {
+      time.replaceChildren(new Option('Loading available times…', ''));
+      time.disabled = true;
+
+      if (!doctor.value || !day.value) {
+        time.replaceChildren(new Option('Choose a doctor and date first', ''));
+        message.textContent = 'Select a doctor and date to see available times.';
+        return;
+      }
+
+      try {
+        const query = new URLSearchParams({ date: day.value });
+        if (appointmentId) query.set('appointmentId', appointmentId);
+        const response = await fetch(
+          `/api/doctors/${encodeURIComponent(doctor.value)}/availability?${query}`
+        );
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Could not load appointment times.');
+        }
+
+        time.replaceChildren(new Option(
+          result.slots.length ? 'Choose an available time' : 'No available times',
+          ''
+        ));
+        result.slots.forEach(slot => time.add(new Option(slot, slot)));
+        if (preferredTime && result.slots.includes(preferredTime)) {
+          time.value = preferredTime;
+          appointmentDate.value = `${day.value}T${preferredTime}`;
+        }
+        time.disabled = result.slots.length === 0;
+        message.textContent = result.message;
+        window.dispatchEvent(new Event('appointment-slots-loaded'));
+      } catch (error) {
+        time.replaceChildren(new Option('Times could not be loaded', ''));
+        message.textContent = error.message;
+      }
+    }
+
+    doctor.addEventListener('change', () => {
+      appointmentDate.value = '';
+      loadAvailableTimes();
+    });
+    day.addEventListener('change', () => {
+      appointmentDate.value = '';
+      loadAvailableTimes();
+    });
+    time.addEventListener('change', () => {
+      appointmentDate.value = day.value && time.value
+        ? `${day.value}T${time.value}`
+        : '';
+    });
+    appointmentDate.addEventListener('change', async () => {
+      if (!appointmentDate.value) return;
+
+      day.value = appointmentDate.value.slice(0, 10);
+      await loadAvailableTimes();
+      time.value = appointmentDate.value.slice(11, 16);
+    });
+    window.addEventListener('appointment-slots-loaded', () => {
+      if (appointmentDate.value) {
+        time.value = appointmentDate.value.slice(11, 16);
+      }
+    });
+    form.addEventListener('submit', event => {
+      if (!doctor.value || !day.value || !time.value) {
+        event.preventDefault();
+        message.textContent = 'Please select an available doctor, date and appointment time.';
+      }
+    });
+
+    if (previousDate && !Number.isNaN(previousDate.getTime())) {
+      const previousDay = [
+        previousDate.getFullYear(),
+        String(previousDate.getMonth() + 1).padStart(2, '0'),
+        String(previousDate.getDate()).padStart(2, '0')
+      ].join('-');
+      const previousTime = `${String(previousDate.getHours()).padStart(2, '0')}:${String(previousDate.getMinutes()).padStart(2, '0')}`;
+      day.value = previousDay;
+      loadAvailableTimes(previousTime);
+    }
+  })();
+</script>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,66 @@
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main narrow-main doctor-profile-edit-page">
+  <section class="page-heading">
+    <div>
+      <div class="eyebrow">DOCTOR PORTAL</div>
+      <h1>Edit your profile</h1>
+      <p>Update the details patients see in the doctor directory.</p>
+    </div>
+  </section>
+
+  <section class="panel doctor-profile-edit-panel">
+    <form action="/doctor/profile/edit" method="post" enctype="multipart/form-data" class="stack-form">
+      <div class="doctor-profile-edit-photo">
+        <% if (imageUrl) { %>
+          <img id="profileImagePreview" src="<%= imageUrl %>" alt="Current profile photo of <%= doctor.name %>">
+        <% } else { %>
+          <div id="profileImagePlaceholder" class="doctor-profile-edit-placeholder" aria-label="No profile photo uploaded">
+            <i class="fa-regular fa-user" aria-hidden="true"></i>
+          </div>
+          <img id="profileImagePreview" src="" alt="Profile photo preview" hidden>
+        <% } %>
+        <div>
+          <p class="doctor-preview-label">Directory photo</p>
+          <p class="muted">This is the photo patients will see on your doctor card.</p>
+        </div>
+      </div>
+
+      <label for="name">Doctor name</label>
+      <input id="name" name="name" value="<%= doctor.name %>" autocomplete="name" minlength="2" maxlength="80" required>
+
+      <label for="education">Qualification</label>
+      <textarea id="education" name="education" rows="3" maxlength="500" required><%= doctor.education %></textarea>
+
+      <label for="profileImage">Change profile photo (JPG, PNG or WebP, up to 5 MB)</label>
+      <input id="profileImage" name="profileImage" type="file" accept="image/jpeg,image/png,image/webp">
+      <p class="form-note">Leave the photo field empty to keep your current image.</p>
+
+      <div class="doctor-profile-edit-actions">
+        <button class="btn" type="submit">Save profile changes <span>→</span></button>
+        <a class="btn btn-outline" href="/doctor/dashboard">Cancel</a>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script>
+  (() => {
+    const input = document.getElementById('profileImage');
+    const preview = document.getElementById('profileImagePreview');
+    const placeholder = document.getElementById('profileImagePlaceholder');
+
+    input.addEventListener('change', () => {
+      const [file] = input.files;
+      if (!file) return;
+
+      preview.src = URL.createObjectURL(file);
+      preview.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+    });
+  })();
+</script>
+
+<%- include('partials/footer') %>

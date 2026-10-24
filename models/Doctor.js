@@ -29,6 +29,11 @@ const schema = new mongoose.Schema({
     maxlength: 500
   },
 
+  imageUrl: {
+    type: String,
+    default: ''
+  },
+
   profileImage: {
     type: String,
     default: ''

@@ -19,28 +19,33 @@
   <div class="doctor-grid doctor-grid-page">
     <% if (doctors.length) { %>
       <% doctors.forEach((doctor, index) => { %>
-        <article class="doctor-card">
-          <% if (doctor.profileImage) { %>
+        <article class="doctor-card doctor-directory-card">
+          <% const imageUrl = doctor.imageUrl || doctor.profileImage; %>
+          <% if (imageUrl) { %>
             <img
-              src="<%= doctor.profileImage %>"
+              src="<%= imageUrl %>"
               alt="Profile photo of <%= doctor.name %>"
-              class="doctor-avatar avatar-<%= index % 4 %>"
-              style="object-fit: cover"
+              class="doctor-avatar doctor-directory-photo"
               loading="lazy"
             >
           <% } else { %>
-            <div class="doctor-avatar avatar-<%= index % 4 %>">
-              <%= doctor.name.split(' ').filter(Boolean).slice(1).map(name => name[0]).join('').slice(0, 2) %>
+            <div class="doctor-avatar doctor-directory-photo doctor-photo-placeholder" aria-label="No profile photo uploaded">
+              <i class="fa-regular fa-user" aria-hidden="true"></i>
             </div>
           <% } %>
-          <div>
-            <h3><%= doctor.name %></h3>
+          <div class="doctor-directory-info">
+            <div class="doctor-directory-name-row">
+              <h3><%= doctor.name %></h3>
+              <span class="doctor-profile-badge" aria-label="CareNest doctor">
+                <i class="fa-solid fa-user-doctor" aria-hidden="true"></i>
+              </span>
+            </div>
             <p class="doctor-specialty"><%= doctor.specialty %></p>
-            <p class="muted"><%= doctor.experience %> years experience</p>
+            <p class="muted doctor-experience"><i class="fa-solid fa-briefcase-medical" aria-hidden="true"></i><%= doctor.experience %> years experience</p>
             <% if (doctor.education) { %>
-              <p class="muted"><%= doctor.education %></p>
+              <p class="muted doctor-education"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i><%= doctor.education %></p>
             <% } %>
-            <p class="doctor-hours">◷ <%= doctor.availability %></p>
+            <p class="doctor-hours"><i class="fa-regular fa-clock" aria-hidden="true"></i><%= doctor.availability %></p>
           </div>
         </article>
       <% }) %>

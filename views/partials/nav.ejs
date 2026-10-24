@@ -45,6 +45,9 @@
         <a href="/doctor/schedule" class="<%= navLinkClass('/doctor/schedule') %>" <%- currentPath === '/doctor/schedule' ? 'aria-current="page"' : '' %>>
           My Schedule
         </a>
+        <a href="/doctor/profile/edit" class="<%= navLinkClass('/doctor/profile/edit') %>" <%- currentPath === '/doctor/profile/edit' ? 'aria-current="page"' : '' %>>
+          Edit Profile
+        </a>
       <% } else if (currentUser?.role === 'admin') { %>
         <a href="/admin" class="<%= navLinkClass('/admin') %>" <%- currentPath === '/admin' ? 'aria-current="page"' : '' %>>
           Admin Dashboard
@@ -123,6 +126,9 @@
       </a>
       <a href="/doctor/schedule" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/doctor/schedule' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/doctor/schedule' ? 'aria-current="page"' : '' %>>
         My Schedule
+      </a>
+      <a href="/doctor/profile/edit" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/doctor/profile/edit' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/doctor/profile/edit' ? 'aria-current="page"' : '' %>>
+        Edit Profile
       </a>
     <% } else if (currentUser?.role === 'admin') { %>
       <a href="/admin" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/admin' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/admin' ? 'aria-current="page"' : '' %>>

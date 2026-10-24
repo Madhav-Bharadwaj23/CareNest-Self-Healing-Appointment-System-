@@ -2,7 +2,7 @@
 <%- include('partials/nav') %>
 <%- include('partials/flash') %>
 
-<main class="wrap page-main narrow-main">
+<main class="wrap page-main narrow-main appointment-page">
   <div class="page-heading">
     <div>
       <div class="eyebrow">YOUR NEXT STEP</div>
@@ -11,7 +11,7 @@
     </div>
   </div>
 
-  <div class="panel form-panel">
+  <div class="panel form-panel appointment-panel">
     <form
       action="<%= appointment ? `/appointments/${appointment._id}/reschedule` : '/appointments' %>"
       method="post"
@@ -22,31 +22,69 @@
     >
       <input id="appointmentDate" name="appointmentDate" type="datetime-local" hidden>
 
-      <label for="patientName">Who is this appointment for?</label>
-      <input id="patientName" name="patientName" value="<%= appointment ? appointment.patientName : currentUser.fullName %>" required maxlength="100" <%= appointment ? 'readonly' : '' %>>
+      <section class="patient-details-section">
+        <div class="form-section-heading">
+          <span class="form-step">01</span>
+          <div>
+            <h2>Patient details</h2>
+            <p>Tell us who the appointment is for.</p>
+          </div>
+        </div>
+        <div class="patient-fields">
+          <div>
+            <label for="patientName">Patient full name</label>
+            <input id="patientName" name="patientName" value="<%= appointment ? appointment.patientName : currentUser.fullName %>" required maxlength="100" autocomplete="name" <%= appointment ? 'readonly' : '' %>>
+          </div>
+          <div>
+            <label for="relationship">Relationship to you</label>
+            <select name="relationship" id="relationship" <%= appointment ? 'disabled' : '' %>>
+              <% const relationship = appointment ? appointment.relationship : 'Self'; %>
+              <% ['Self', 'Parent', 'Spouse', 'Child', 'Other family member'].forEach(value => { %>
+                <option <%= relationship === value ? 'selected' : '' %>><%= value %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+      </section>
 
-      <label for="relationship">Relationship to you</label>
-      <select name="relationship" id="relationship" <%= appointment ? 'disabled' : '' %>>
-        <% const relationship = appointment ? appointment.relationship : 'Self'; %>
-        <% ['Self', 'Parent', 'Spouse', 'Child', 'Other family member'].forEach(value => { %>
-          <option <%= relationship === value ? 'selected' : '' %>><%= value %></option>
-        <% }) %>
-      </select>
-
-      <label for="doctorId">Doctor</label>
-      <select id="doctorId" name="doctorId" required>
-        <option value="">Select a doctor</option>
-        <% doctors.forEach(d => { %>
-          <option value="<%= d._id %>" <%= appointment && String(appointment.doctorId) === String(d._id) ? 'selected' : '' %>>
-            <%= d.name %> — <%= d.specialty %><%= d.education ? ` · ${d.education}` : '' %>
-          </option>
-        <% }) %>
-      </select>
+      <section class="appointment-selection-section">
+        <div class="form-section-heading">
+          <span class="form-step">02</span>
+          <div>
+            <h2>Choose your specialist</h2>
+            <p>Select a doctor to see their profile and available times.</p>
+          </div>
+        </div>
+        <label for="doctorId">Doctor</label>
+        <select id="doctorId" name="doctorId" required>
+          <option value="">Select a doctor</option>
+          <% doctors.forEach(d => { %>
+            <option
+              value="<%= d._id %>"
+              data-name="<%= d.name %>"
+              data-specialty="<%= d.specialty %>"
+              data-education="<%= d.education || '' %>"
+              data-experience="<%= d.experience || 0 %>"
+              data-image="<%= d.imageUrl || d.profileImage || '' %>"
+              <%= appointment && String(appointment.doctorId) === String(d._id) ? 'selected' : '' %>>
+              <%= d.name %> — <%= d.specialty %><%= d.education ? ` · ${d.education}` : '' %>
+            </option>
+          <% }) %>
+        </select>
+        <article id="doctorProfilePreview" class="appointment-doctor-preview" aria-live="polite" hidden>
+          <img id="appointmentDoctorImage" src="" alt="">
+          <div>
+            <p class="doctor-preview-label">Your specialist</p>
+            <h3 id="appointmentDoctorName"></h3>
+            <p id="appointmentDoctorMeta"></p>
+          </div>
+        </article>
+      </section>
       <% if (!doctors.length) { %>
         <p class="form-note">No doctors are available yet. Ask an administrator to seed the doctor list.</p>
       <% } %>
 
-      <label for="appointmentDay">Date</label>
+      <label for="appointmentDay">Appointment date</label>
       <input id="appointmentDay" name="appointmentDay" type="date" required>
 
       <label for="appointmentTime">Available appointment time</label>
@@ -78,6 +116,10 @@
 <script>
   (() => {
     const doctor = document.getElementById('doctorId');
+    const doctorPreview = document.getElementById('doctorProfilePreview');
+    const doctorImage = document.getElementById('appointmentDoctorImage');
+    const doctorName = document.getElementById('appointmentDoctorName');
+    const doctorMeta = document.getElementById('appointmentDoctorMeta');
     const day = document.getElementById('appointmentDay');
     const time = document.getElementById('appointmentTime');
     const appointmentDate = document.getElementById('appointmentDate');
@@ -90,6 +132,39 @@
     const minDate = new Date();
     minDate.setMinutes(minDate.getMinutes() - minDate.getTimezoneOffset());
     day.min = minDate.toISOString().slice(0, 10);
+
+    function updateDoctorPreview() {
+      const selected = doctor.selectedOptions[0];
+      if (!selected || !selected.value) {
+        doctorPreview.hidden = true;
+        return;
+      }
+
+      const name = selected.dataset.name;
+      const specialty = selected.dataset.specialty;
+      const education = selected.dataset.education;
+      const experience = selected.dataset.experience;
+      const image = selected.dataset.image;
+
+      doctorName.textContent = name;
+      doctorMeta.textContent = [
+        specialty,
+        education,
+        experience ? `${experience} years experience` : ''
+      ].filter(Boolean).join(' · ');
+
+      if (image) {
+        doctorImage.src = image;
+        doctorImage.alt = `Dr. ${name}`;
+        doctorImage.hidden = false;
+      } else {
+        doctorImage.removeAttribute('src');
+        doctorImage.alt = '';
+        doctorImage.hidden = true;
+      }
+
+      doctorPreview.hidden = false;
+    }
 
     async function loadAvailableTimes(preferredTime = '') {
       time.replaceChildren(new Option('Loading available times…', ''));
@@ -133,6 +208,7 @@
 
     doctor.addEventListener('change', () => {
       appointmentDate.value = '';
+      updateDoctorPreview();
       loadAvailableTimes();
     });
     day.addEventListener('change', () => {
@@ -173,6 +249,7 @@
       day.value = previousDay;
       loadAvailableTimes(previousTime);
     }
+    updateDoctorPreview();
   })();
 </script>
 

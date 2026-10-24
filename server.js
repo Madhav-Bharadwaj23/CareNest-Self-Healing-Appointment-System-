@@ -520,7 +520,7 @@ function removeDoctorPhoto(file) {
   });
 }
 
-function handleDoctorPhotoUpload(req, res, next) {
+function handleDoctorPhotoUpload(req, res, next, failurePath = '/doctor/register') {
   doctorPhotoUpload.single('profileImage')(req, res, error => {
     if (error) {
       const message = error instanceof multer.MulterError &&
@@ -528,10 +528,21 @@ function handleDoctorPhotoUpload(req, res, next) {
         ? 'Profile photos must be 5 MB or smaller.'
         : error.message;
       flash(req, 'error', message);
-      return res.redirect('/doctor/register');
+      return res.redirect(failurePath);
     }
 
     next();
+  });
+}
+
+function removeStoredDoctorPhoto(imageUrl) {
+  const match = /^\/uploads\/doctors\/([a-f0-9-]+\.(?:jpg|png|webp))$/i.exec(imageUrl || '');
+  if (!match) return Promise.resolve();
+
+  return fs.promises.unlink(path.join(doctorPhotoDirectory, match[1])).catch(error => {
+    if (error.code !== 'ENOENT') {
+      console.error('Previous doctor photo cleanup failed:', error.message);
+    }
   });
 }
 
@@ -570,6 +581,11 @@ app.post('/doctor/register', handleDoctorPhotoUpload, async (req, res) => {
     return res.redirect('/doctor/register');
   }
 
+  if (!req.file) {
+    flash(req, 'error', 'Please upload your doctor profile photo.');
+    return res.redirect('/doctor/register');
+  }
+
   let user;
 
   try {
@@ -588,9 +604,7 @@ app.post('/doctor/register', handleDoctorPhotoUpload, async (req, res) => {
         specialty,
         education,
         experience,
-        profileImage: req.file
-          ? `/uploads/doctors/${req.file.filename}`
-          : ''
+        imageUrl: `/uploads/doctors/${req.file.filename}`
       });
     } catch (error) {
       await User.deleteOne({ _id: user._id });
@@ -1028,6 +1042,103 @@ app.get('/doctor/dashboard', requireDoctor, async (req, res) => {
     });
   }
 });
+
+app.get('/doctor/profile/edit', requireDoctor, async (req, res) => {
+  try {
+    const doctor = await Doctor.findOne({
+      userId: req.session.user.id,
+      active: true
+    }).lean();
+
+    if (!doctor) {
+      flash(req, 'error', 'Doctor profile is not linked to this account.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    return res.render('doctor-profile-edit', {
+      title: 'Edit Doctor Profile | CareNest',
+      doctor,
+      imageUrl: doctor.imageUrl || doctor.profileImage || ''
+    });
+  } catch (error) {
+    await logIncident(
+      'doctor-profile-edit-load',
+      'error',
+      error.message,
+      'Doctor profile edit page failed to load'
+    );
+    flash(req, 'error', 'Could not load your profile right now.');
+    return res.redirect('/doctor/dashboard');
+  }
+});
+
+app.post(
+  '/doctor/profile/edit',
+  requireDoctor,
+  (req, res, next) => handleDoctorPhotoUpload(req, res, next, '/doctor/profile/edit'),
+  async (req, res) => {
+    const name = String(req.body.name || '').trim();
+    const education = String(req.body.education || '').trim();
+
+    if (name.length < 2 || name.length > 80 || !education || education.length > 500) {
+      await removeDoctorPhoto(req.file);
+      flash(req, 'error', 'Enter a name between 2 and 80 characters and qualifications up to 500 characters.');
+      return res.redirect('/doctor/profile/edit');
+    }
+
+    let doctorProfileSaved = false;
+
+    try {
+      const doctor = await Doctor.findOne({
+        userId: req.session.user.id,
+        active: true
+      });
+
+      if (!doctor) {
+        await removeDoctorPhoto(req.file);
+        flash(req, 'error', 'Doctor profile is not linked to this account.');
+        return res.redirect('/doctor/dashboard');
+      }
+
+      const previousImageUrl = doctor.imageUrl || doctor.profileImage || '';
+      const updatedImageUrl = req.file
+        ? `/uploads/doctors/${req.file.filename}`
+        : previousImageUrl;
+
+      doctor.name = name;
+      doctor.education = education;
+      doctor.imageUrl = updatedImageUrl;
+      doctor.profileImage = updatedImageUrl;
+      await doctor.save();
+      doctorProfileSaved = true;
+
+      await User.updateOne(
+        { _id: req.session.user.id, role: 'doctor' },
+        { $set: { fullName: name } }
+      );
+      req.session.user.fullName = name;
+
+      if (req.file && previousImageUrl && previousImageUrl !== updatedImageUrl) {
+        await removeStoredDoctorPhoto(previousImageUrl);
+      }
+
+      flash(req, 'success', 'Your doctor profile has been updated.');
+      return res.redirect('/doctor/dashboard');
+    } catch (error) {
+      if (!doctorProfileSaved) {
+        await removeDoctorPhoto(req.file);
+      }
+      await logIncident(
+        'doctor-profile-edit',
+        'error',
+        error.message,
+        'Doctor profile update failed'
+      );
+      flash(req, 'error', 'Could not update your profile. Please try again.');
+      return res.redirect('/doctor/profile/edit');
+    }
+  }
+);
 
 app.post('/doctor/appointments/:id/reschedule', requireDoctor, async (req, res) => {
   try {

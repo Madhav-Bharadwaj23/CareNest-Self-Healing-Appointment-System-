@@ -377,6 +377,11 @@ document.addEventListener("DOMContentLoaded", () => {
         `${selectedDoctor.name} · ${selectedDoctor.specialty} · ` +
         `${formatDate(selectedDate)} · ${selectedTime} · ₹${selectedDoctor.fee}`;
 
+      $("reviewDoctorImage").src = selectedDoctor.image;
+      $("reviewDoctorImage").alt = `Dr. ${selectedDoctor.name}`;
+      $("reviewDoctorName").textContent = selectedDoctor.name;
+      $("reviewDoctorSpecialty").textContent = selectedDoctor.specialty;
+
       $("bookingDetails").classList.remove("hidden");
 
       $("bookingDetails").scrollIntoView({

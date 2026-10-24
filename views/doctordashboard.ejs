@@ -16,16 +16,22 @@
         <p><%= doctor.education %></p>
       <% } %>
     </div>
-    <% if (doctor.profileImage) { %>
+    <% const imageUrl = doctor.imageUrl || doctor.profileImage; %>
+    <% if (imageUrl) { %>
       <img
-        src="<%= doctor.profileImage %>"
+        src="<%= imageUrl %>"
         alt="Profile photo of <%= doctor.name %>"
         class="h-20 w-20 rounded-2xl object-cover"
       >
     <% } %>
-    <span class="health-badge health-healthy">
-      <i></i> Doctor Portal
-    </span>
+    <div class="doctor-dashboard-actions">
+      <a class="btn btn-outline" href="/doctor/profile/edit">
+        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i> Edit profile
+      </a>
+      <span class="health-badge health-healthy">
+        <i></i> Doctor Portal
+      </span>
+    </div>
   </section>
 
   <section class="stats-grid">

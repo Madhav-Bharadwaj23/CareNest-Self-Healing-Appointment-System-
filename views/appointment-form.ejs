@@ -19,6 +19,8 @@
       id="appointmentForm"
       data-appointment-id="<%= appointment ? appointment._id : '' %>"
       data-appointment-date="<%= appointment ? appointment.appointmentDate.toISOString() : '' %>"
+      data-patient-id="<%= currentUser.id %>"
+      <%= appointment ? '' : 'data-offline-booking-form' %>
     >
       <input id="appointmentDate" name="appointmentDate" type="datetime-local" hidden>
 
@@ -108,6 +110,10 @@
       <button class="btn btn-full" type="submit" <%= !doctors.length ? 'disabled' : '' %>>
         <%= appointment ? 'Reschedule appointment' : 'Book selected time' %> <span>→</span>
       </button>
+      <% if (!appointment) { %>
+        <p id="offlineBookingStatus" class="form-note" role="status" aria-live="polite"></p>
+        <p class="form-note"><a href="/offline-booking.html">Open the offline appointment request form</a></p>
+      <% } %>
       <p class="form-note">Only open times in the doctor's schedule can be booked. Please contact the hospital for urgent needs.</p>
     </form>
   </div>
@@ -199,10 +205,23 @@
         }
         time.disabled = result.slots.length === 0;
         message.textContent = result.message;
-        window.dispatchEvent(new Event('appointment-slots-loaded'));
+        window.dispatchEvent(new CustomEvent('appointment-slots-loaded', {
+          detail: { doctorId: doctor.value, date: day.value, slots: result.slots }
+        }));
       } catch (error) {
-        time.replaceChildren(new Option('Times could not be loaded', ''));
-        message.textContent = error.message;
+        const savedSlots = window.CareNestOffline
+          ? await window.CareNestOffline.getAvailability(doctor.value, day.value)
+          : null;
+
+        if (!navigator.onLine && savedSlots) {
+          time.replaceChildren(new Option('Choose a previously loaded time', ''));
+          savedSlots.forEach(slot => time.add(new Option(slot, slot)));
+          time.disabled = savedSlots.length === 0;
+          message.textContent = 'Offline: these times were last checked while online. Availability will be checked again when submitted.';
+        } else {
+          time.replaceChildren(new Option('Times could not be loaded', ''));
+          message.textContent = error.message;
+        }
       }
     }
 

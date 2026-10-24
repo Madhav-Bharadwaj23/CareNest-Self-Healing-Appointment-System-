@@ -20,6 +20,7 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 14. Admin metrics and incident review.
 15. Safe fallback/error pages and health-status page.
 16. Contact form stores a message in MongoDB; it does not send email in this starter.
+17. Offline appointment requests are saved in browser IndexedDB and submitted to the authenticated booking endpoint when connectivity returns. The server checks availability before confirming and sending email.
 
 ## Setup on Windows
 
@@ -40,6 +41,7 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 9. Doctors can register at `/doctor/register`, then sign in at `/doctor/login` to add working days and appointment slots at `/doctor/schedule`, and reschedule or cancel upcoming appointments from `/doctor/dashboard`. Patients receive an in-app notification for doctor-initiated appointment changes.
 10. Patients can book an open doctor slot at `/appointments/new`, then review `/appointments` and `/dashboard`. Supported browsers speak a short confirmation after a successful booking or reschedule; use the replay button if browser autoplay is blocked.
 11. Use the **Self-healing** tab in the site navigation to open the protected panel. Sign in with the configured self-healing admin credentials to view service status, run each resilience check separately, or run the full suite. The **Self-healing** switch controls whether recovery actions execute; when off, checks stop after diagnosis and are labeled **Disabled**, with no recovery action or test notification sent. Its setting is stored in `data/self-healing-settings.json` and survives a server restart. When enabled, the notification scenario tests in-app delivery using a temporary notice. It does not send email or SMS; appointment confirmation and update emails are separate features.
+12. To use offline appointment requests, sign in and open `/appointments/new` at least once while online in a browser that supports service workers and IndexedDB. Wait for the page to finish loading so the service worker can cache the offline form and the doctor list can be saved. Then disconnect and navigate to any page on your site; it will show the offline request form. The request stays on that device until internet returns and the same patient signs in again. The requested date/time is checked against the live doctor schedule only after sync; saving offline is not a reservation or confirmation. Service workers require HTTPS except on `localhost`, so plain HTTP sites opened through a LAN IP will not support this.
 
 ## Folder structure
 
@@ -76,6 +78,7 @@ carenest-ejs/
 ## Important demo limitations
 
 - This is a learning scaffold, not a production hospital system. Do not store real patient/medical data.
+- Offline requests and the saved patient name are stored in that browser's local IndexedDB until synced. Device storage is not encrypted by this app; use only on a trusted, private device and do not use this feature for real patient data without an appropriate privacy/security design.
 - Doctors manage weekly working days, clinic hours and optional specific appointment start times; patients can only book open times in that schedule.
 - Doctor profile photos are optional local JPG, PNG or WebP uploads, limited to 5 MB.
 - Appointment availability is checked again when the booking is submitted, but this starter does not integrate with a real hospital system.

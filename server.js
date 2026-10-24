@@ -1723,6 +1723,16 @@ app.get('/appointments/:id/reschedule', requirePatient, async (req, res) => {
 });
 
 app.post('/appointments', requirePatient, async (req, res) => {
+  const offlineSync = req.get('X-Offline-Booking') === 'true';
+  const respondError = (status, message) => {
+    if (offlineSync) {
+      return res.status(status).json({ success: false, message });
+    }
+
+    flash(req, 'error', message);
+    return res.redirect('/appointments/new');
+  };
+
   try {
     if (mongoose.connection.readyState !== 1) {
       await logIncident(
@@ -1732,8 +1742,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
         'Booking request was rejected safely'
       );
 
-      flash(req, 'error', 'Booking service is temporarily unavailable.');
-      return res.redirect('/appointments/new');
+      return respondError(503, 'Booking service is temporarily unavailable.');
     }
 
     const {
@@ -1743,8 +1752,32 @@ app.post('/appointments', requirePatient, async (req, res) => {
       appointmentDate: legacyAppointmentDate,
       reason,
       patientName,
-      relationship
+      relationship,
+      requestId,
+      offlinePatientId
     } = req.body;
+
+    if (offlineSync) {
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(requestId || '')) ||
+        String(offlinePatientId || '') !== String(req.session.user.id)
+      ) {
+        return respondError(400, 'This saved request is invalid or belongs to another signed-in account.');
+      }
+
+      const existingRequest = await Appointment.findOne({ requestId }).lean();
+      if (existingRequest) {
+        if (String(existingRequest.patientId) !== String(req.session.user.id)) {
+          return respondError(409, 'This saved request has already been used.');
+        }
+
+        return res.json({
+          success: true,
+          bookingId: existingRequest.bookingId,
+          message: 'Appointment booked successfully.'
+        });
+      }
+    }
 
     let appointmentDay = String(requestedDay || '');
     let appointmentTime = String(requestedTime || '');
@@ -1775,8 +1808,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
       date <= new Date() ||
       !mongoose.isValidObjectId(doctorId)
     ) {
-      flash(req, 'error', 'Choose a valid doctor and future date/time.');
-      return res.redirect('/appointments/new');
+      return respondError(400, 'Choose a valid doctor and future date/time.');
     }
 
     const doctor = await Doctor.findOne({
@@ -1785,8 +1817,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
     });
 
     if (!doctor) {
-      flash(req, 'error', 'That doctor is not currently available.');
-      return res.redirect('/appointments/new');
+      return respondError(409, 'That doctor is not currently available.');
     }
 
     const weekdayNames = [
@@ -1803,8 +1834,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
       getDoctorSlotTimes(doctor).includes(appointmentTime);
 
     if (!hasDoctorAvailability) {
-      flash(req, 'error', 'That time is not in the doctor’s available schedule.');
-      return res.redirect('/appointments/new');
+      return respondError(409, 'That time is not in the doctor’s available schedule.');
     }
 
     const slotEnd = new Date(date.getTime() + 60 * 60 * 1000);
@@ -1825,16 +1855,14 @@ app.post('/appointments', requirePatient, async (req, res) => {
         'Booking rejected because this doctor already has a booked appointment overlapping the selected hour'
       );
 
-      flash(
-        req,
-        'error',
+      return respondError(
+        409,
         'This doctor already has an appointment at that time. Please choose another date or time.'
       );
-
-      return res.redirect('/appointments/new');
     }
 
     const appointment = await Appointment.create({
+      ...(offlineSync ? { requestId } : {}),
       patientId: req.session.user.id,
       doctorId: doctor._id,
       patientName: String(
@@ -1911,6 +1939,18 @@ app.post('/appointments', requirePatient, async (req, res) => {
       }
     }
 
+    if (offlineSync) {
+      return res.json({
+        success: true,
+        bookingId: appointment.bookingId,
+        message: emailSent
+          ? 'Appointment booked successfully. A confirmation email has been sent.'
+          : emailQueued
+            ? 'Appointment booked successfully. The confirmation email is queued until self-healing is turned on.'
+            : 'Appointment booked successfully, but the confirmation email could not be sent.'
+      });
+    }
+
     flash(
       req,
       'success',
@@ -1927,6 +1967,21 @@ app.post('/appointments', requirePatient, async (req, res) => {
     console.error('APPOINTMENT BOOKING ERROR:', error);
 
     if (error.code === 11000) {
+      if (offlineSync && req.body.requestId) {
+        const savedRequest = await Appointment.findOne({
+          requestId: req.body.requestId,
+          patientId: req.session.user.id
+        }).lean();
+
+        if (savedRequest) {
+          return res.json({
+            success: true,
+            bookingId: savedRequest.bookingId,
+            message: 'Appointment booked successfully.'
+          });
+        }
+      }
+
       await logIncident(
         'duplicate-appointment-attempt',
         'warning',
@@ -1934,13 +1989,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
         'Conflicting booking rejected by database uniqueness protection'
       );
 
-      flash(
-        req,
-        'error',
-        'This slot is already booked. Please choose another date or time.'
-      );
-
-      return res.redirect('/appointments/new');
+      return respondError(409, 'This slot is already booked. Please choose another date or time.');
     }
 
     await logIncident(
@@ -1950,13 +1999,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
       'Booking failed safely; patient can retry'
     );
 
-    flash(
-      req,
-      'error',
-      'We could not complete the booking. Please try again.'
-    );
-
-    return res.redirect('/appointments/new');
+    return respondError(500, 'We could not complete the booking. Please try again.');
   }
 });
 

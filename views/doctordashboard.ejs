@@ -67,6 +67,7 @@
               <th>Patient</th>
               <th>Reason</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -90,6 +91,35 @@
                   <span class="pill">
                     <%= appointment.status %>
                   </span>
+                </td>
+                <td>
+                  <% if (appointment.status === 'booked' &&
+                    new Date(appointment.appointmentDate) > new Date()) { %>
+                    <form
+                      action="/doctor/appointments/<%= appointment._id %>/reschedule"
+                      method="post"
+                      class="stack-form"
+                    >
+                      <label>
+                        New date
+                        <input type="date" name="appointmentDay" required>
+                      </label>
+                      <label>
+                        New time
+                        <input type="time" name="appointmentTime" required>
+                      </label>
+                      <button class="btn btn-small" type="submit">Reschedule</button>
+                    </form>
+                    <form
+                      action="/doctor/appointments/<%= appointment._id %>/cancel"
+                      method="post"
+                      onsubmit="return confirm('Cancel this appointment and notify the patient?')"
+                    >
+                      <button class="btn btn-small btn-outline" type="submit">Cancel</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
                 </td>
               </tr>
             <% }) %>

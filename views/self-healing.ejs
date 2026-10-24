@@ -1,9 +1,11 @@
 <%
   const scenarioStatus = name => {
+    if (health.chaosActive) return 'Disabled by chaos';
     const entry = latestScenarioStatuses[name];
     if (!entry) return 'Not tested';
     if (entry.status === 'passed') return 'Healthy';
     if (entry.status === 'failed') return 'Issue detected';
+    if (entry.status === 'skipped') return 'Disabled';
     return entry.status;
   };
   const scenarioTone = name => {
@@ -19,7 +21,8 @@
     { id: 'doctor-api', name: 'Doctor directory API', service: 'Express', description: 'Requests the real doctor directory page and validates its response.' },
     { id: 'network-connectivity', name: 'Network connectivity', service: 'Browser + health endpoint', description: 'Checks browser online state and makes a real health endpoint request; does not turn off a network.' },
     { id: 'booking-idempotency', name: 'Duplicate booking protection', service: 'MongoDB booking index', description: 'Attempts a duplicate request ID in an isolated test collection and verifies it is rejected.' },
-    { id: 'notification-adapter', name: 'Notification adapter', service: 'SMS', description: 'Runs the notification adapter in dry-run mode; no SMS is sent.' },
+    { id: 'notification-adapter', name: 'SMS adapter', service: 'SMS', description: 'Runs the SMS adapter in dry-run mode; no SMS is sent.' },
+    { id: 'notification-delivery', name: 'Notification self-healing', service: 'In-app notifications', description: 'Uses a temporary in-app notice to test delivery recovery. This scenario never sends email or SMS.' },
     { id: 'appointment-reconciliation', name: 'Data reconciliation', service: 'Appointment integrity', description: 'Repairs a stale lock in isolated test records and leaves unknown locks for review.' }
   ];
   const statusClass = status => status === 'passed'
@@ -27,6 +30,15 @@
     : status === 'failed'
       ? 'pill pill-cancelled'
       : 'pill pill-warning';
+  const statusImage = status => status === 'passed'
+    ? ['verify.svg', 'Passed']
+    : status === 'failed'
+      ? ['failed.svg', 'Failed']
+    : status === 'skipped'
+      ? ['detect.svg', 'Disabled; no recovery action performed']
+    : status === 'step'
+        ? ['heal.svg', 'In progress']
+        : ['detect.svg', 'Information'];
 %>
 <style>
   .scenario-live-status{display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.25rem .7rem;font-size:.78rem;font-weight:700;white-space:nowrap}
@@ -38,6 +50,7 @@
 </style>
 <%- include('partials/head',{title}) %>
 <%- include('partials/nav') %>
+<%- include('partials/flash') %>
 <main class="wrap page-main">
   <div class="page-heading">
     <div>
@@ -45,11 +58,43 @@
       <h1>Self-healing monitor.</h1>
       <p>Service status, individual checks, and a complete execution history.</p>
     </div>
-    <form action="/self-healing/logout" method="post">
-      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
-      <button class="btn btn-outline" type="submit">Log out</button>
-    </form>
+    <div class="flex flex-wrap items-center gap-3">
+      <form action="/self-healing/toggle" method="post" class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="enabled" value="<%= health.enabled ? 'false' : 'true' %>">
+        <span>
+          <strong class="block text-sm">Self-healing <%= health.enabled ? 'ON' : 'OFF' %></strong>
+          <small class="text-slate-500">Automatic recovery</small>
+        </span>
+        <button
+          class="relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition <%= health.enabled ? 'bg-teal-700' : 'bg-slate-400' %>"
+          type="submit"
+          role="switch"
+          aria-checked="<%= health.enabled %>"
+          aria-label="Turn self-healing <%= health.enabled ? 'off' : 'on' %>"
+        >
+          <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition <%= health.enabled ? 'translate-x-6' : 'translate-x-1' %>"></span>
+        </button>
+      </form>
+      <form action="/self-healing/logout" method="post">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <button class="btn btn-outline" type="submit">Log out</button>
+      </form>
+    </div>
   </div>
+
+  <% if (databaseUnavailable) { %>
+    <div class="warning-note mt-5" role="alert">
+      <strong>Database is currently unavailable.</strong>
+      CareNest cannot reach MongoDB right now. Database-backed pages are hidden until it reconnects. When self-healing is ON, CareNest retries the MongoDB connection automatically; database-dependent scenarios remain paused until recovery.
+    </div>
+  <% } %>
+  <% if (health.chaosActive) { %>
+    <div class="warning-note mt-5" role="alert">
+      <strong>Chaos simulation is disabling app services.</strong>
+      Triggered by <%= health.chaosScenario %>. User-facing app routes are temporarily returning 503. MongoDB and external services are not actually disconnected. <% if (health.enabled) { %>Self-healing is ON; recovery is automatic shortly.<% } else { %>Turn self-healing ON to restore app routes now.<% } %>
+    </div>
+  <% } %>
 
   <section aria-label="Service status" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     <article class="health-card flex items-center justify-between gap-4">
@@ -61,8 +106,12 @@
       <span data-service-light="doctor-api" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('doctor-api') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('doctor-api') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
     </article>
     <article class="health-card flex items-center justify-between gap-4">
-      <div><small>Notifications (SMS)</small><strong data-service-status="notification-adapter" class="block <%= scenarioTone('notification-adapter') %>"><%= scenarioStatus('notification-adapter') %></strong><p>Adapter is dry-run only</p></div>
+      <div><small>SMS adapter</small><strong data-service-status="notification-adapter" class="block <%= scenarioTone('notification-adapter') %>"><%= scenarioStatus('notification-adapter') %></strong><p>Adapter is dry-run only</p></div>
       <span data-service-light="notification-adapter" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('notification-adapter') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('notification-adapter') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
+    </article>
+    <article class="health-card flex items-center justify-between gap-4">
+      <div><small>In-app notification delivery</small><strong data-service-status="notification-delivery" class="block <%= scenarioTone('notification-delivery') %>"><%= scenarioStatus('notification-delivery') %></strong><p>Recovery test completes within 10 seconds</p></div>
+      <span data-service-light="notification-delivery" class="h-3 w-3 shrink-0 rounded-full <%= scenarioStatus('notification-delivery') === 'Healthy' ? 'bg-emerald-500' : scenarioStatus('notification-delivery') === 'Issue detected' ? 'bg-red-500' : 'bg-slate-300' %>"></span>
     </article>
     <article class="health-card flex items-center justify-between gap-4">
       <div><small>Data reconciliation</small><strong data-service-status="appointment-reconciliation" class="block <%= scenarioTone('appointment-reconciliation') %>"><%= scenarioStatus('appointment-reconciliation') %></strong><p>Isolated integrity test</p></div>
@@ -80,16 +129,17 @@
     <div class="panel-heading">
       <div>
         <h2>Test each scenario</h2>
-        <p>Run a single check or execute the complete suite.</p>
+        <p>Run a single check or execute the complete suite. Chaos buttons simulate an app-wide outage; with self-healing OFF the outage stays until you turn it ON.</p>
       </div>
       <form action="/self-healing/run" method="post" class="scenario-run-form" data-scenario="all">
         <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
         <input type="hidden" name="browserOnline" value="false">
-        <button class="btn" type="submit">⚡ Run all 6 scenarios</button>
+        <button class="btn" type="submit" <%= databaseUnavailable && health.enabled ? 'disabled title="Waiting for MongoDB to reconnect"' : '' %>>⚡ Run all 7 scenarios</button>
       </form>
     </div>
     <div class="warning-note mb-5">
-      Status colors describe the scenario process: red = detecting/test started, yellow = diagnosing or recovering, green = passed verification. They do not falsely indicate a live outage. The live database is never disconnected; database, duplicate-booking, and reconciliation tests use isolated test records. Network is checked, not deliberately interrupted; SMS stays in dry-run mode.
+      Status colors describe the scenario process: red = detecting/test started, yellow = diagnosing or recovering, green = passed verification. Disabled scenarios are labeled separately and do not run their recovery action. The live database is never disconnected; database, duplicate-booking, and reconciliation tests use isolated test records. The notification test uses a temporary in-app notice only; it does not send email or SMS. Network is checked, not deliberately interrupted. Chaos buttons only block app routes for this demo; they do not disconnect MongoDB or stop external services.
+      <% if (!health.enabled) { %> Self-healing is currently off, so scenario runs will stop after diagnosis and record the issue as not healed.<% } %>
     </div>
     <div id="healingRunPanel" class="hidden rounded-2xl border border-teal-200 bg-teal-50 p-5" aria-live="polite">
       <div class="flex flex-wrap items-center justify-between gap-2">
@@ -99,11 +149,19 @@
       <div class="mt-3 h-2 overflow-hidden rounded-full bg-teal-100">
         <div id="healingProgressBar" class="h-full w-0 rounded-full bg-teal-600 transition-all duration-500"></div>
       </div>
-      <div id="healingLiveLog" class="mt-4 max-h-64 space-y-2 overflow-y-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-emerald-200" role="log" aria-relevant="additions"></div>
+      <div class="mt-4 flex items-center gap-4 rounded-xl border border-teal-100 bg-white p-3">
+        <img id="healingProcessImage" src="/images/self-healing/detect.svg" alt="Detecting the issue" class="h-24 w-32 rounded-lg bg-slate-50 object-contain">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Current process</p>
+          <strong id="healingProcessLabel" class="mt-1 block text-teal-800">Waiting to start</strong>
+        </div>
+      </div>
+      <div id="healingLiveLog" class="mt-4 max-h-64 space-y-3 overflow-y-auto rounded-xl bg-slate-950 p-4 text-sm text-emerald-200" role="log" aria-relevant="additions"></div>
     </div>
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <% scenarioCards.forEach(scenario => { %>
+        <% const requiresDatabase = ['database-reconnect', 'doctor-api', 'booking-idempotency', 'notification-delivery', 'appointment-reconciliation'].includes(scenario.id); %>
         <article class="health-card flex flex-col justify-between gap-4">
           <div>
             <div class="flex items-start justify-between gap-2">
@@ -118,7 +176,13 @@
           <form action="/self-healing/run/<%= scenario.id %>" method="post" class="scenario-run-form" data-scenario="<%= scenario.id %>">
             <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
             <input type="hidden" name="browserOnline" value="false">
-            <button class="btn btn-outline btn-small" type="submit">Run this scenario</button>
+            <button class="btn btn-outline btn-small" type="submit" <%= databaseUnavailable && health.enabled && requiresDatabase ? 'disabled title="Waiting for MongoDB to reconnect"' : '' %>>Run this scenario</button>
+          </form>
+          <form action="/self-healing/chaos/<%= scenario.id %>" method="post">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <button class="btn btn-outline btn-small" type="submit" <%= health.chaosActive ? 'disabled' : '' %>>
+              Inject chaos (disable app)
+            </button>
           </form>
         </article>
       <% }) %>
@@ -138,7 +202,13 @@
               <tr>
                 <td><%= new Date(entry.timestamp).toLocaleString() %></td>
                 <td><%= entry.scenario %></td>
-                <td><span class="<%= statusClass(entry.status) %>"><%= entry.status %></span></td>
+                <td>
+                  <% const [imageName, imageLabel] = statusImage(entry.status); %>
+                  <span class="<%= statusClass(entry.status) %>" title="<%= imageLabel %>">
+                    <img src="/images/self-healing/<%= imageName %>" alt="<%= imageLabel %>" class="inline-block h-7 w-9 object-contain">
+                    <span class="sr-only"><%= imageLabel %></span>
+                  </span>
+                </td>
                 <td><%= entry.message %></td>
               </tr>
             <% }) %>

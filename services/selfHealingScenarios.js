@@ -2,6 +2,13 @@ const fs = require('fs/promises');
 const path = require('path');
 const mongoose = require('mongoose');
 const { sendAppointmentSms } = require('./smsService');
+const Notification = require('../models/Notification');
+const {
+  createNotification,
+  getNotificationDeliveryState,
+  recoverNotificationDelivery,
+  simulateNotificationFailure
+} = require('./notificationService');
 
 const logPath = path.join(__dirname, '..', 'data', 'self-healing-runs.jsonl');
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -37,6 +44,12 @@ const scenarioNarratives = {
     recovery: 'Executing the adapter test; no external SMS is sent.',
     verify: 'Confirming the adapter reports dry-run mode.'
   },
+  'notification-delivery': {
+    detected: 'Starting a controlled in-app notification delivery failure test.',
+    diagnosis: 'Confirming the notification service is available before the simulation.',
+    recovery: 'Simulating a short notification outage; new notices are buffered for automatic recovery.',
+    verify: 'Confirming the service recovered and the buffered test notice was delivered.'
+  },
   'appointment-reconciliation': {
     detected: 'Creating temporary appointment and slot-lock records in the isolated test database.',
     diagnosis: 'Finding a stale lock tied to a cancelled probe appointment.',
@@ -45,16 +58,18 @@ const scenarioNarratives = {
   }
 };
 
-function isolatedMongoUri(sourceUri) {
-  const uri = new URL(sourceUri);
-  const databaseName = decodeURIComponent(uri.pathname.slice(1) || 'carenest');
+function isolatedMongoDatabaseName() {
+  const databaseName = mongoose.connection.name;
+
+  if (!databaseName) {
+    throw new Error('MongoDB must be connected before isolated self-healing checks can run.');
+  }
 
   if (databaseName.endsWith('_self_heal_test')) {
     throw new Error('MONGODB_URI must point to the app database, not the test database.');
   }
 
-  uri.pathname = `/${encodeURIComponent(`${databaseName}_self_heal_test`)}`;
-  return uri.toString();
+  return `${databaseName}_self_heal_test`;
 }
 
 async function appendLog(entry) {
@@ -79,10 +94,12 @@ async function readRecentLogs() {
   }
 }
 
-async function runLoggedScenario(name, action, onProgress) {
+async function runLoggedScenario(name, action, options) {
   const startedAt = Date.now();
+  const duration = 10000;
   const narrative = scenarioNarratives[name];
-  let failure = null;
+  let outcome = 'passed';
+  let resultMessage = 'Scenario completed and verified.';
 
   const publish = async (phase, message) => {
     const entry = {
@@ -93,7 +110,7 @@ async function runLoggedScenario(name, action, onProgress) {
       message
     };
     await appendLog(entry);
-    if (onProgress) onProgress(entry);
+    if (options.onProgress) options.onProgress(entry);
   };
 
   try {
@@ -101,11 +118,27 @@ async function runLoggedScenario(name, action, onProgress) {
     await sleep(Math.max(0, startedAt + 2500 - Date.now()));
     await publish('diagnose', narrative.diagnosis);
     await sleep(Math.max(0, startedAt + 5000 - Date.now()));
+    if (
+      options.selfHealingEnabled === false ||
+      (options.isSelfHealingEnabled && !options.isSelfHealingEnabled())
+    ) {
+      outcome = 'failed';
+      resultMessage = 'Recovery failed: self-healing is turned off. The issue was detected but no recovery action was attempted.';
+      await sleep(Math.max(0, startedAt + duration - Date.now()));
+      await appendLog({
+        timestamp: new Date().toISOString(),
+        scenario: name,
+        status: outcome,
+        phase: 'complete',
+        message: resultMessage
+      });
+      return;
+    }
     await publish('heal', narrative.recovery);
-    const message = await action();
-    await sleep(Math.max(0, startedAt + 7500 - Date.now()));
+    const message = await action(publish);
+    await sleep(Math.max(0, startedAt + duration - 2500 - Date.now()));
     await publish('verify', narrative.verify);
-    await sleep(Math.max(0, startedAt + 10000 - Date.now()));
+    await sleep(Math.max(0, startedAt + duration - Date.now()));
     await appendLog({
       timestamp: new Date().toISOString(),
       scenario: name,
@@ -114,25 +147,26 @@ async function runLoggedScenario(name, action, onProgress) {
       message
     });
   } catch (error) {
-    failure = String(error.message)
-        .replace(/(mongodb(?:\+srv)?:\/\/)[^@\s]+@/gi, '$1[redacted]@')
-        .slice(0, 500);
-    await sleep(Math.max(0, startedAt + 10000 - Date.now()));
+    outcome = 'failed';
+    resultMessage = String(error.message)
+      .replace(/(mongodb(?:\+srv)?:\/\/)[^@\s]+@/gi, '$1[redacted]@')
+      .slice(0, 500);
+    await sleep(Math.max(0, startedAt + duration - Date.now()));
     await appendLog({
       timestamp: new Date().toISOString(),
       scenario: name,
-      status: 'failed',
+      status: outcome,
       phase: 'complete',
-      message: failure
+      message: resultMessage
     });
   } finally {
-    if (onProgress) {
-      onProgress({
+    if (options.onProgress) {
+      options.onProgress({
         timestamp: new Date().toISOString(),
         scenario: name,
-        status: failure ? 'failed' : 'passed',
+        status: outcome,
         phase: 'complete',
-        message: failure || 'Scenario completed and verified.'
+        message: resultMessage
       });
     }
   }
@@ -143,8 +177,8 @@ async function connectToIsolatedDatabase() {
     throw new Error('MONGODB_URI is not configured.');
   }
 
-  const uri = isolatedMongoUri(process.env.MONGODB_URI);
-  const connection = mongoose.createConnection(uri, {
+  const connection = mongoose.createConnection(process.env.MONGODB_URI, {
+    dbName: isolatedMongoDatabaseName(),
     serverSelectionTimeoutMS: 5000,
     connectTimeoutMS: 5000
   });
@@ -291,6 +325,62 @@ async function testNotificationAdapter() {
   return 'Notification adapter executed in dry-run mode; no SMS was sent.';
 }
 
+async function testNotificationDelivery(publish) {
+  const probeMessage = `Self-healing notification probe ${new mongoose.Types.ObjectId()}`;
+  const recovery = simulateNotificationFailure(5000);
+  let probeError = null;
+
+  try {
+    if (!getNotificationDeliveryState().simulatedFailureActive) {
+      throw new Error('The simulated notification failure was not activated.');
+    }
+
+    await createNotification({
+      userId: null,
+      type: 'self-healing-probe',
+      message: probeMessage
+    });
+
+    if (getNotificationDeliveryState().queuedCount !== 1) {
+      throw new Error('The notification probe was not buffered during the simulated failure.');
+    }
+    await publish(
+      'heal',
+      'NOT DELIVERED (simulated failure): the test notification is queued until recovery.'
+    );
+  } catch (error) {
+    probeError = error;
+  }
+
+  try {
+    await recovery;
+    const recoveredNotification = await Notification.findOne({
+      type: 'self-healing-probe',
+      message: probeMessage
+    }).lean();
+
+    if (!recoveredNotification) {
+      throw new Error('The buffered notification was not delivered after recovery.');
+    }
+
+    if (probeError) throw probeError;
+
+    await publish(
+      'verify',
+      'Notification delivery recovered: the queued test notification is now saved and delivered.'
+    );
+    return 'In-app notifications recovered and the buffered test notice was delivered within the 10-second scenario.';
+  } finally {
+    if (getNotificationDeliveryState().simulatedFailureActive) {
+      await recoverNotificationDelivery();
+    }
+    await Notification.deleteOne({
+      type: 'self-healing-probe',
+      message: probeMessage
+    });
+  }
+}
+
 async function testAppointmentReconciliation() {
   const connection = await connectToIsolatedDatabase();
   const appointments = connection.collection('self_heal_reconciliation_appointments');
@@ -351,6 +441,8 @@ const scenarioActions = {
     testNetworkConnectivity(baseUrl, browserOnline),
   'booking-idempotency': testBookingIdempotencyIndex,
   'notification-adapter': testNotificationAdapter,
+  'notification-delivery': async (_options, publish) =>
+    testNotificationDelivery(publish),
   'appointment-reconciliation': testAppointmentReconciliation
 };
 
@@ -361,7 +453,7 @@ async function runSelfHealingScenario(name, options) {
     throw new Error('Unknown self-healing scenario.');
   }
 
-  await runLoggedScenario(name, () => action(options), options.onProgress);
+  await runLoggedScenario(name, publish => action(options, publish), options);
   return readRecentLogs();
 }
 
@@ -369,7 +461,7 @@ async function runSelfHealingScenarios(options) {
   await appendLog({
     scenario: 'scenario-suite',
     status: 'info',
-    message: 'Starting all safe checks. The active app database and patient data will not be modified.'
+    message: 'Starting all safe checks. Patient data will not be modified; the notification recovery test creates and removes a temporary probe notice.'
   });
 
   for (const name of Object.keys(scenarioActions)) {

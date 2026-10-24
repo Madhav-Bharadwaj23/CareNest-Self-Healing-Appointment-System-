@@ -28,6 +28,9 @@
       <a href="/doctors" data-i18n="findDoctor" class="<%= navLinkClass('/doctors') %>" <%- currentPath === '/doctors' ? 'aria-current="page"' : '' %>>
         Find a Doctor
       </a>
+      <a href="/self-healing" class="<%= navLinkClass('/self-healing') %>" <%- currentPath === '/self-healing' ? 'aria-current="page"' : '' %>>
+        Self-healing
+      </a>
       <% if (currentUser?.role === 'patient') { %>
         <a href="/dashboard" class="<%= navLinkClass('/dashboard') %>" <%- currentPath === '/dashboard' ? 'aria-current="page"' : '' %>>
           Dashboard
@@ -104,6 +107,9 @@
     <a href="/doctors" data-i18n="findDoctor" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/doctors' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/doctors' ? 'aria-current="page"' : '' %>>
       Find a Doctor
     </a>
+    <a href="/self-healing" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/self-healing' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/self-healing' ? 'aria-current="page"' : '' %>>
+      Self-healing
+    </a>
     <% if (currentUser?.role === 'patient') { %>
       <a href="/dashboard" class="block rounded-lg px-3 py-3 text-sm font-semibold <%= currentPath === '/dashboard' ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50 hover:text-teal-700' %>" <%- currentPath === '/dashboard' ? 'aria-current="page"' : '' %>>
         Dashboard
@@ -154,3 +160,8 @@
     </div>
   </nav>
 </header>
+<% if (!databaseAvailable) { %>
+  <div class="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-900" role="status">
+    The database is currently unavailable. Some features may be temporarily unavailable; please try again when connectivity is restored.
+  </div>
+<% } %>

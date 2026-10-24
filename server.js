@@ -17,7 +17,14 @@ const Appointment = require('./models/Appointment');
 const WaitingList = require('./models/WaitingList');
 const Incident = require('./models/Incident');
 const Notification = require('./models/Notification');
+const { createNotification } = require('./services/notificationService');
+const {
+  sendAppointmentEmail,
+  sendAppointmentUpdateEmail,
+  flushQueuedAppointmentEmails
+} = require('./services/emailService');
 const { sendAppointmentSms } = require('./services/smsService');
+const PersistentSessionStore = require('./services/persistentSessionStore');
 const {
   readRecentLogs,
   runSelfHealingScenario,
@@ -27,7 +34,11 @@ const {
 const {
   startHealthMonitor,
   logIncident,
-  getHealth
+  getHealth,
+  loadSelfHealingSetting,
+  setSelfHealingEnabled,
+  triggerChaos,
+  recoverChaos
 } = require('./services/selfHealing');
 
 const app = express();
@@ -56,12 +67,14 @@ const doctorPhotoUpload = multer({
   }
 });
 const activeSelfHealingRuns = new Map();
+let databaseReconnectTask = null;
 const selfHealingScenarioNames = [
   'database-reconnect',
   'doctor-api',
   'network-connectivity',
   'booking-idempotency',
   'notification-adapter',
+  'notification-delivery',
   'appointment-reconciliation'
 ];
 // -------------------- TRANSLATION API --------------------
@@ -149,15 +162,86 @@ if (process.env.MONGODB_URI) {
   });
 }
 
-app.use(session(sessionOptions));
+const databaseSession = session(sessionOptions);
+const fallbackSession = session({
+  ...sessionOptions,
+  name: 'carenest.fallback.sid',
+  store: new session.MemoryStore()
+});
+const selfHealingSession = session({
+  ...sessionOptions,
+  name: 'carenest.healing.sid',
+  store: new PersistentSessionStore(
+    path.join(__dirname, 'data', 'self-healing-sessions.json')
+  )
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/self-healing')) {
+    return selfHealingSession(req, res, next);
+  }
+
+  const middleware = mongoose.connection.readyState === 1 || !process.env.MONGODB_URI
+    ? databaseSession
+    : fallbackSession;
+  return middleware(req, res, next);
+});
 
 app.use((req, res, next) => {
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
+  res.locals.databaseAvailable = mongoose.connection.readyState === 1;
   res.locals.flash = req.session.flash || null;
   delete req.session.flash;
   next();
 });
+
+const databaseIndependentPaths = new Set([
+  '/',
+  '/about',
+  '/contact',
+  '/doctor/login',
+  '/doctor/register',
+  '/login',
+  '/register'
+]);
+
+app.use((req, res, next) => {
+  const chaosActive = getHealth().chaosActive;
+  const chaosControlRequest =
+    req.path === '/health' ||
+    req.path.startsWith('/self-healing');
+
+  if (chaosActive && !chaosControlRequest) {
+    const message = 'CareNest is in a simulated service outage. Turn self-healing on in the protected monitor to recover services.';
+    if (req.accepts('html')) {
+      return res.status(503).render('500', {
+        title: 'Chaos Simulation Active'
+      });
+    }
+    return res.status(503).json({ message });
+  }
+
+  const databaseIndependent =
+    req.path === '/health' ||
+    req.path === '/api/translate' ||
+    req.path.startsWith('/self-healing') ||
+    (req.method === 'GET' && databaseIndependentPaths.has(req.path));
+
+  if (mongoose.connection.readyState === 1 || databaseIndependent) {
+    return next();
+  }
+
+  const message = 'The database is currently unavailable. Database-backed pages and data are temporarily hidden.';
+  if (req.accepts('html')) {
+    return res.status(503).render('500', {
+      title: 'Database Temporarily Unavailable'
+    });
+  }
+
+  return res.status(503).json({ message });
+});
+
 // -------------------- TRANSLATION ROUTE --------------------
 
 app.post('/api/translate', async (req, res) => {
@@ -216,8 +300,12 @@ app.post('/api/translate', async (req, res) => {
 });
 // -------------------- HELPERS --------------------
 
-function flash(req, type, message) {
-  req.session.flash = { type, message };
+function flash(req, type, message, speechText) {
+  req.session.flash = {
+    type,
+    message,
+    ...(speechText ? { speechText } : {})
+  };
 }
 
 function requirePatient(req, res, next) {
@@ -246,8 +334,24 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function selfHealingRequestError(req, res, status, message) {
+  if (req.get('accept')?.includes('application/json')) {
+    return res.status(status).json({ message });
+  }
+
+  return res.status(status).send(message);
+}
+
 function requireSelfHealingAdmin(req, res, next) {
   if (!req.session.selfHealingAdmin) {
+    if (req.get('accept')?.includes('application/json')) {
+      return selfHealingRequestError(
+        req,
+        res,
+        401,
+        'Your self-healing session expired. Sign in again and rerun the scenario.'
+      );
+    }
     return res.redirect('/self-healing/login');
   }
 
@@ -295,7 +399,7 @@ function requireDoctor(req, res, next) {
 
 async function dbReady(req, res, next) {
   if (mongoose.connection.readyState !== 1) {
-    flash(req, 'error', 'Database is temporarily unavailable. Please try again.');
+    flash(req, 'error', 'The database is currently unavailable. Please try again when connectivity is restored.');
     return res.redirect('/');
   }
 
@@ -307,18 +411,20 @@ async function dbReady(req, res, next) {
 app.get('/', async (req, res) => {
   let doctors = [];
 
-  try {
-    doctors = await Doctor.find({ active: true })
-      .sort({ name: 1 })
-      .limit(6)
-      .lean();
-  } catch (error) {
-    await logIncident(
-      'doctor-list-read',
-      'warning',
-      error.message,
-      'Fallback: show empty doctor list'
-    );
+  if (mongoose.connection.readyState === 1) {
+    try {
+      doctors = await Doctor.find({ active: true })
+        .sort({ name: 1 })
+        .limit(6)
+        .lean();
+    } catch (error) {
+      await logIncident(
+        'doctor-list-read',
+        'warning',
+        error.message,
+        'Fallback: show empty doctor list'
+      );
+    }
   }
 
   res.render('home', {
@@ -345,7 +451,7 @@ app.post('/contact', async (req, res) => {
   }
 
   try {
-    await Notification.create({
+    await createNotification({
       type: 'contact',
       message: `${name} (${email}): ${message}`,
       status: 'unread'
@@ -515,7 +621,7 @@ app.post('/doctor/register', handleDoctorPhotoUpload, async (req, res) => {
 app.post('/doctor/login', async (req, res, next) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-      flash(req, 'error', 'Database is temporarily unavailable. Please try again.');
+      flash(req, 'error', 'The database is currently unavailable. Please try again when connectivity is restored.');
       return res.redirect('/doctor/login');
     }
 
@@ -597,7 +703,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({
-        message: 'Database is temporarily unavailable.'
+        message: 'The database is currently unavailable. Please try again when connectivity is restored.'
       });
     }
 
@@ -684,7 +790,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({
-        message: 'Database is temporarily unavailable.'
+        message: 'The database is currently unavailable. Please try again when connectivity is restored.'
       });
     }
 
@@ -921,6 +1027,241 @@ app.get('/doctor/dashboard', requireDoctor, async (req, res) => {
       title: 'Doctor Dashboard'
     });
   }
+});
+
+app.post('/doctor/appointments/:id/reschedule', requireDoctor, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      flash(req, 'error', 'Appointment not found.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const doctor = await Doctor.findOne({
+      userId: req.session.user.id,
+      active: true
+    });
+
+    if (!doctor) {
+      flash(req, 'error', 'Doctor profile is not linked to this account.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: req.params.id,
+      doctorId: doctor._id,
+      status: 'booked',
+      appointmentDate: { $gt: new Date() }
+    }).populate('patientId', 'fullName email');
+
+    if (!appointment) {
+      flash(req, 'error', 'Only your upcoming booked appointments can be rescheduled.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const day = String(req.body.appointmentDay || '');
+    const time = String(req.body.appointmentTime || '');
+    const date = isValidAppointmentDay(day) &&
+      /^([01]\d|2[0-3]):([0-5]\d)$/.test(time)
+      ? new Date(`${day}T${time}:00`)
+      : new Date(NaN);
+
+    if (Number.isNaN(date.getTime()) || date <= new Date()) {
+      flash(req, 'error', 'Choose a valid future date and time.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const weekdayNames = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday'
+    ];
+
+    if (
+      !(doctor.workingDays || []).includes(weekdayNames[date.getDay()]) ||
+      !getDoctorSlotTimes(doctor).includes(time)
+    ) {
+      flash(req, 'error', 'That time is not in your available schedule.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const slotEnd = new Date(date.getTime() + 60 * 60 * 1000);
+    const slotStart = new Date(date.getTime() - 60 * 60 * 1000);
+    const conflictingAppointment = await Appointment.findOne({
+      _id: { $ne: appointment._id },
+      doctorId: doctor._id,
+      appointmentDate: { $gt: slotStart, $lt: slotEnd },
+      status: 'booked'
+    }).lean();
+
+    if (conflictingAppointment) {
+      flash(req, 'error', 'You already have an appointment at this time. Choose another slot.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    appointment.appointmentDate = date;
+    await appointment.save();
+
+    let inAppNotified = false;
+    try {
+      await createNotification({
+        userId: appointment.patientId._id,
+        type: 'appointment',
+        message: `Dr. ${doctor.name} rescheduled your appointment to ${date.toLocaleString()}.`
+      });
+      inAppNotified = true;
+    } catch (notificationError) {
+      await logIncident(
+        'doctor-appointment-reschedule-notification',
+        'warning',
+        notificationError.message,
+        `Rescheduling for booking ${appointment.bookingId} was saved but notification failed`
+      );
+    }
+
+    let emailSent = false;
+    let emailQueued = false;
+    try {
+      const delivery = await sendAppointmentUpdateEmail({
+        to: appointment.patientId.email,
+        bookingId: appointment.bookingId,
+        patientName: appointment.patientName,
+        doctorName: doctor.name,
+        appointmentDate: date,
+        action: 'rescheduled'
+      });
+      emailQueued = delivery.queued;
+      emailSent = !delivery.queued;
+    } catch (emailError) {
+      await logIncident(
+        'doctor-appointment-reschedule-email',
+        'warning',
+        emailError.message,
+        `Rescheduling for booking ${appointment.bookingId} was saved but email delivery failed`
+      );
+    }
+
+    flash(
+      req,
+      emailSent || inAppNotified ? 'success' : 'warning',
+      emailSent
+        ? 'Appointment rescheduled and an email notification was sent to the patient.'
+        : emailQueued
+          ? 'Appointment rescheduled. The email is queued and will be sent when self-healing is turned on.'
+        : inAppNotified
+          ? 'Appointment rescheduled and an in-app notification was saved, but the email could not be sent.'
+          : 'Appointment rescheduled, but email and in-app notifications could not be delivered.',
+      'Your appointment is Reschedule'
+    );
+  } catch (error) {
+    await logIncident(
+      'doctor-appointment-reschedule',
+      'error',
+      error.message,
+      'Doctor rescheduling failed safely'
+    );
+    flash(req, 'error', 'Could not reschedule this appointment right now.');
+  }
+
+  return res.redirect('/doctor/dashboard');
+});
+
+app.post('/doctor/appointments/:id/cancel', requireDoctor, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      flash(req, 'error', 'Appointment not found.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const doctor = await Doctor.findOne({
+      userId: req.session.user.id,
+      active: true
+    });
+
+    if (!doctor) {
+      flash(req, 'error', 'Doctor profile is not linked to this account.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: req.params.id,
+      doctorId: doctor._id,
+      status: 'booked',
+      appointmentDate: { $gt: new Date() }
+    }).populate('patientId', 'fullName email');
+
+    if (!appointment) {
+      flash(req, 'error', 'Only your upcoming booked appointments can be cancelled.');
+      return res.redirect('/doctor/dashboard');
+    }
+
+    appointment.status = 'cancelled';
+    await appointment.save();
+
+    let inAppNotified = false;
+    try {
+      await createNotification({
+        userId: appointment.patientId._id,
+        type: 'appointment',
+        message: `Dr. ${doctor.name} cancelled your appointment scheduled for ${appointment.appointmentDate.toLocaleString()}.`
+      });
+      inAppNotified = true;
+    } catch (notificationError) {
+      await logIncident(
+        'doctor-appointment-cancel-notification',
+        'warning',
+        notificationError.message,
+        `Cancellation for booking ${appointment.bookingId} was saved but notification failed`
+      );
+    }
+
+    let emailSent = false;
+    let emailQueued = false;
+    try {
+      const delivery = await sendAppointmentUpdateEmail({
+        to: appointment.patientId.email,
+        bookingId: appointment.bookingId,
+        patientName: appointment.patientName,
+        doctorName: doctor.name,
+        appointmentDate: appointment.appointmentDate,
+        action: 'cancelled'
+      });
+      emailQueued = delivery.queued;
+      emailSent = !delivery.queued;
+    } catch (emailError) {
+      await logIncident(
+        'doctor-appointment-cancel-email',
+        'warning',
+        emailError.message,
+        `Cancellation for booking ${appointment.bookingId} was saved but email delivery failed`
+      );
+    }
+
+    flash(
+      req,
+      emailSent || inAppNotified ? 'success' : 'warning',
+      emailSent
+        ? 'Appointment cancelled and an email notification was sent to the patient.'
+        : emailQueued
+          ? 'Appointment cancelled. The email is queued and will be sent when self-healing is turned on.'
+        : inAppNotified
+          ? 'Appointment cancelled and an in-app notification was saved, but the email could not be sent.'
+          : 'Appointment cancelled, but email and in-app notifications could not be delivered.'
+    );
+  } catch (error) {
+    await logIncident(
+      'doctor-appointment-cancel',
+      'error',
+      error.message,
+      'Doctor cancellation failed safely'
+    );
+    flash(req, 'error', 'Could not cancel this appointment right now.');
+  }
+
+  return res.redirect('/doctor/dashboard');
 });
 
 // -------------------- DOCTOR SCHEDULE PAGE --------------------
@@ -1396,7 +1737,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
 
     // A notification failure must not make a successful booking look failed.
     try {
-      await Notification.create({
+      await createNotification({
         userId: req.session.user.id,
         type: 'appointment',
         message: `Appointment booked with ${doctor.name} for ${date.toLocaleString()}.`
@@ -1432,7 +1773,43 @@ app.post('/appointments', requirePatient, async (req, res) => {
       }
     }
 
-    flash(req, 'success', 'Appointment booked successfully.');
+    let emailSent = false;
+    let emailQueued = false;
+
+    try {
+      const delivery = await sendAppointmentEmail({
+        to: req.session.user.email,
+        bookingId: appointment.bookingId,
+        patientName: appointment.patientName,
+        doctorName: doctor.name,
+        appointmentDate: appointment.appointmentDate
+      });
+      emailQueued = delivery.queued;
+      emailSent = !delivery.queued;
+    } catch (emailError) {
+      console.error('APPOINTMENT EMAIL ERROR:', emailError.message);
+      try {
+        await logIncident(
+          'appointment-email',
+          'warning',
+          emailError.message,
+          `Booking ${appointment.bookingId} was saved but confirmation email was not sent`
+        );
+      } catch (incidentError) {
+        console.error('EMAIL INCIDENT LOG ERROR:', incidentError.message);
+      }
+    }
+
+    flash(
+      req,
+      'success',
+      emailSent
+        ? 'Appointment booked successfully. A confirmation email has been sent.'
+        : emailQueued
+          ? 'Appointment booked successfully. The confirmation email is queued until self-healing is turned on.'
+        : 'Appointment booked successfully, but the confirmation email could not be sent.',
+      'Your Appointment is Book'
+    );
     return res.redirect('/appointments');
 
   } catch (error) {
@@ -1593,12 +1970,14 @@ app.post('/appointments/:id/reschedule', requirePatient, async (req, res) => {
     appointment.appointmentDate = date;
     await appointment.save();
 
+    let inAppNotified = false;
     try {
-      await Notification.create({
+      await createNotification({
         userId: req.session.user.id,
         type: 'appointment',
         message: `Your appointment with ${doctor.name} has been rescheduled to ${date.toLocaleString()}.`
       });
+      inAppNotified = true;
     } catch (notificationError) {
       await logIncident(
         'appointment-reschedule-notification',
@@ -1608,7 +1987,40 @@ app.post('/appointments/:id/reschedule', requirePatient, async (req, res) => {
       );
     }
 
-    flash(req, 'success', 'Appointment rescheduled successfully.');
+    let emailSent = false;
+    let emailQueued = false;
+    try {
+      const delivery = await sendAppointmentUpdateEmail({
+        to: req.session.user.email,
+        bookingId: appointment.bookingId,
+        patientName: appointment.patientName,
+        doctorName: doctor.name,
+        appointmentDate: date,
+        action: 'rescheduled'
+      });
+      emailQueued = delivery.queued;
+      emailSent = !delivery.queued;
+    } catch (emailError) {
+      await logIncident(
+        'appointment-reschedule-email',
+        'warning',
+        emailError.message,
+        `Rescheduling for booking ${appointment.bookingId} was saved but email delivery failed`
+      );
+    }
+
+    flash(
+      req,
+      emailSent || inAppNotified ? 'success' : 'warning',
+      emailSent
+        ? 'Appointment rescheduled successfully. An email notification was sent.'
+        : emailQueued
+          ? 'Appointment rescheduled. The email is queued and will be sent when self-healing is turned on.'
+        : inAppNotified
+          ? 'Appointment rescheduled. An in-app notification was saved, but the email could not be sent.'
+          : 'Appointment rescheduled, but email and in-app notifications could not be delivered.',
+      'Your appointment is Reschedule'
+    );
   } catch (error) {
     await logIncident(
       'appointment-reschedule',
@@ -1643,7 +2055,7 @@ app.post('/appointments/:id/cancel', requirePatient, async (req, res) => {
     await appointment.save();
 
     try {
-      await Notification.create({
+      await createNotification({
         userId: req.session.user.id,
         type: 'appointment',
         message: 'Your appointment has been cancelled.'
@@ -1667,7 +2079,7 @@ app.post('/appointments/:id/cancel', requirePatient, async (req, res) => {
       next.offeredAppointmentDate = appointment.appointmentDate;
       await next.save();
 
-      await Notification.create({
+      await createNotification({
         userId: next.patientId,
         type: 'slot-offer',
         message: `A slot may be available on ${appointment.appointmentDate.toLocaleString()}. Please contact the clinic to confirm.`
@@ -1789,6 +2201,8 @@ function startSelfHealingRun(req, scenarioName) {
   const options = {
     baseUrl: `http://127.0.0.1:${PORT}`,
     browserOnline: req.body.browserOnline === 'true',
+    selfHealingEnabled: getHealth().enabled,
+    isSelfHealingEnabled: () => getHealth().enabled,
     onProgress(entry) {
       if (entry.phase === 'detect') {
         run.currentScenario = entry.scenario;
@@ -1892,10 +2306,113 @@ app.post('/self-healing/logout', requireSelfHealingAdmin, (req, res, next) => {
   });
 });
 
+app.post('/self-healing/toggle', requireSelfHealingAdmin, async (req, res) => {
+  if (!validSelfHealingCsrfToken(req)) {
+    return selfHealingRequestError(req, res, 403, 'Invalid security token.');
+  }
+
+  if (req.body.enabled !== 'true' && req.body.enabled !== 'false') {
+    return selfHealingRequestError(req, res, 400, 'Choose whether self-healing should be on or off.');
+  }
+
+  const enabled = req.body.enabled === 'true';
+  await setSelfHealingEnabled(enabled);
+  if (enabled) {
+    if (recoverChaos()) {
+      await logIncident(
+        'chaos-recovery',
+        'info',
+        'Self-healing recovered the simulated service outage',
+        'All application routes are available again'
+      );
+    }
+    void connectDatabaseWithRetry();
+  }
+  let message = `Self-healing is now ${enabled ? 'ON' : 'OFF'}.`;
+  let type = 'success';
+  if (enabled) {
+    try {
+      const sentCount = await flushQueuedAppointmentEmails();
+      if (sentCount) {
+        message += ` Sent ${sentCount} queued appointment email${sentCount === 1 ? '' : 's'}.`;
+      }
+    } catch (error) {
+      type = 'warning';
+      message += ' Pending emails could not all be sent; they remain queued for another attempt.';
+      await logIncident(
+        'pending-appointment-email-delivery',
+        'warning',
+        error.message,
+        'Queued email remains stored and can be retried when self-healing is enabled'
+      );
+    }
+  }
+  flash(req, type, message);
+  res.redirect('/self-healing');
+});
+
+app.post('/self-healing/chaos/:scenario', requireSelfHealingAdmin, async (req, res) => {
+  if (!validSelfHealingCsrfToken(req)) {
+    return selfHealingRequestError(req, res, 403, 'Invalid security token.');
+  }
+
+  if (!selfHealingScenarioNames.includes(req.params.scenario)) {
+    return selfHealingRequestError(req, res, 404, 'Unknown self-healing scenario.');
+  }
+
+  try {
+    triggerChaos(req.params.scenario);
+  } catch (error) {
+    return selfHealingRequestError(req, res, 409, error.message);
+  }
+
+  await logIncident(
+    'chaos-injection',
+    'warning',
+    `Simulated service outage injected from ${req.params.scenario}`,
+    getHealth().enabled
+      ? 'Automatic self-healing recovery is scheduled'
+      : 'Recovery is paused until self-healing is enabled'
+  );
+  flash(
+    req,
+    'warning',
+    getHealth().enabled
+      ? 'Chaos simulation started. Services will recover automatically in a few seconds.'
+      : 'Chaos simulation started. Services are paused until you turn self-healing on.'
+  );
+  return res.redirect('/self-healing');
+});
+
+function selfHealingDatabaseUnavailable(req, res, scenarioName) {
+  const databaseDependentScenarios = [
+    'database-reconnect',
+    'booking-idempotency',
+    'notification-delivery',
+    'appointment-reconciliation'
+  ];
+  if (
+    getHealth().enabled &&
+    mongoose.connection.readyState !== 1 &&
+    (!scenarioName || databaseDependentScenarios.includes(scenarioName))
+  ) {
+    selfHealingRequestError(
+      req,
+      res,
+      503,
+      'The database is currently unavailable. Restore database connectivity before running this self-healing scenario.'
+    );
+    return true;
+  }
+  return false;
+}
+
 app.post('/self-healing/run', requireSelfHealingAdmin, async (req, res) => {
   if (!validSelfHealingCsrfToken(req)) {
-    return res.status(403).send('Invalid security token.');
+    return selfHealingRequestError(req, res, 403, 'Invalid security token.');
   }
+
+  if (selfHealingDatabaseUnavailable(req, res, null)) return;
 
   if (!startSelfHealingRun(req, null)) {
     return res.status(409).json({ message: 'A scenario run is already in progress.' });
@@ -1905,12 +2422,14 @@ app.post('/self-healing/run', requireSelfHealingAdmin, async (req, res) => {
 
 app.post('/self-healing/run/:scenario', requireSelfHealingAdmin, async (req, res) => {
   if (!validSelfHealingCsrfToken(req)) {
-    return res.status(403).send('Invalid security token.');
+    return selfHealingRequestError(req, res, 403, 'Invalid security token.');
   }
 
   if (!selfHealingScenarioNames.includes(req.params.scenario)) {
-    return res.status(404).send('Unknown self-healing scenario.');
+    return selfHealingRequestError(req, res, 404, 'Unknown self-healing scenario.');
   }
+
+  if (selfHealingDatabaseUnavailable(req, res, req.params.scenario)) return;
 
   if (!startSelfHealingRun(req, req.params.scenario)) {
     return res.status(409).json({ message: 'A scenario run is already in progress.' });
@@ -1941,10 +2460,13 @@ app.get('/self-healing/run-status', requireSelfHealingAdmin, (req, res) => {
 app.get('/self-healing', requireSelfHealingAdmin, async (req, res) => {
   let incidents = [];
   let scenarioLogs = [];
+  const databaseUnavailable = mongoose.connection.readyState !== 1;
 
   try {
     [incidents, scenarioLogs] = await Promise.all([
-      Incident.find().sort({ createdAt: -1 }).limit(20).lean(),
+      databaseUnavailable
+        ? Promise.resolve([])
+        : Incident.find().sort({ createdAt: -1 }).limit(20).lean(),
       readRecentLogs()
     ]);
   } catch (error) {
@@ -1967,7 +2489,8 @@ app.get('/self-healing', requireSelfHealingAdmin, async (req, res) => {
     incidents,
     scenarioLogs,
     latestScenarioStatuses,
-    csrfToken: ensureSelfHealingCsrfToken(req)
+    csrfToken: ensureSelfHealingCsrfToken(req),
+    databaseUnavailable
   });
 });
 
@@ -2096,12 +2619,20 @@ app.post('/admin/resolve/:id', requireAdmin, async (req, res) => {
 // -------------------- HEALTH CHECK --------------------
 
 app.get('/health', (req, res) => {
-  const databaseConnected = mongoose.connection.readyState === 1;
+  const health = getHealth();
+  const databaseConnected = health.database === 'connected';
+  const healthy = databaseConnected && !health.chaosActive;
 
-  res.status(databaseConnected ? 200 : 503).json({
+  res.status(healthy ? 200 : 503).json({
     service: 'hospital-api',
-    status: databaseConnected ? 'healthy' : 'degraded',
+    status: healthy ? 'healthy' : 'degraded',
     database: databaseConnected ? 'connected' : 'disconnected',
+    chaosSimulation: health.chaosActive,
+    message: health.chaosActive
+      ? 'The app is in a simulated service outage.'
+      : databaseConnected
+      ? 'Database connection is available.'
+      : 'The database is currently unavailable. Please try again when connectivity is restored.',
     timestamp: new Date().toISOString()
   });
 });
@@ -2137,7 +2668,47 @@ app.use(async (error, req, res, next) => {
 
 // -------------------- START SERVER --------------------
 
+function connectDatabaseWithRetry() {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+  if (databaseReconnectTask) return databaseReconnectTask;
+
+  databaseReconnectTask = (async () => {
+    let initialAttempt = true;
+    while (
+      mongoose.connection.readyState !== 1 &&
+      (initialAttempt || getHealth().enabled)
+    ) {
+      initialAttempt = false;
+      try {
+        await mongoose.connect(
+          process.env.MONGODB_URI ||
+          'mongodb://127.0.0.1:27017/carenest_hospital',
+          { serverSelectionTimeoutMS: 5000 }
+        );
+        console.log('MongoDB connected');
+        await logIncident(
+          'database-reconnected',
+          'info',
+          'CareNest is connected to MongoDB',
+          'Database connection is available'
+        );
+        return;
+      } catch (error) {
+        console.error('MongoDB connection failed:', error.message);
+        if (!getHealth().enabled) return;
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+  })().finally(() => {
+    databaseReconnectTask = null;
+  });
+
+  return databaseReconnectTask;
+}
+
 async function start() {
+  await loadSelfHealingSetting();
+
   mongoose.connection.on('connected', () => {
     console.log('MongoDB connected/reconnected');
   });
@@ -2162,40 +2733,34 @@ async function start() {
     ).catch(console.error);
   });
 
-  try {
-    await mongoose.connect(
-      process.env.MONGODB_URI ||
-      'mongodb://127.0.0.1:27017/carenest_hospital'
-    );
-
-    console.log('MongoDB connected');
-
-    await logIncident(
-      'startup',
-      'info',
-      'CareNest server started',
-      'Initial health check completed'
-    );
-  } catch (error) {
-    console.error('MongoDB connection failed:', error.message);
-
-    try {
-      await logIncident(
-        'mongodb-connect',
-        'critical',
-        error.message,
-        'Initial database connection failed'
-      );
-    } catch (logError) {
-      console.error('Incident logging failed:', logError.message);
-    }
-  }
-
   startHealthMonitor();
 
   app.listen(PORT, () => {
     console.log(`CareNest running at http://localhost:${PORT}`);
   });
+
+  if (getHealth().enabled) {
+    void flushQueuedAppointmentEmails().catch(error => {
+      console.error('Could not flush queued appointment emails:', error.message);
+      void logIncident(
+        'pending-appointment-email-delivery',
+        'warning',
+        error.message,
+        'Queued emails remain stored and will be retried the next time self-healing is enabled'
+      );
+    });
+  }
+
+  setInterval(() => {
+    if (
+      getHealth().enabled &&
+      mongoose.connection.readyState === 0
+    ) {
+      void connectDatabaseWithRetry();
+    }
+  }, 5000).unref();
+
+  void connectDatabaseWithRetry();
 }
 
 start();

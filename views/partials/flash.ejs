@@ -1,1 +1,18 @@
-<% if(flash){ %><div class="wrap flash flash-<%= flash.type %>" role="status"><%= flash.message %></div><% } %>
+<% if(flash){ %><div class="wrap flash flash-<%= flash.type %>" role="status"><%= flash.message %><% if(flash.speechText){ %> <button type="button" class="btn btn-small btn-outline" id="replayFlashSpeech" hidden>Play voice message</button><script>
+  (() => {
+    const button = document.getElementById('replayFlashSpeech');
+    const text = <%- JSON.stringify(flash.speechText) %>;
+    if (!button || !('speechSynthesis' in window)) return;
+
+    function speakConfirmation() {
+      window.speechSynthesis.cancel();
+      const message = new SpeechSynthesisUtterance(text);
+      message.lang = 'en-IN';
+      window.speechSynthesis.speak(message);
+    }
+
+    button.hidden = false;
+    button.addEventListener('click', speakConfirmation);
+    speakConfirmation();
+  })();
+</script><% } %></div><% } %>

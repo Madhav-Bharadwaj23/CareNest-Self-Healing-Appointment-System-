@@ -13,9 +13,9 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 7. Appointment history, rescheduling with any active doctor's available slot, and cancellation.
 8. Waiting-list request and a basic freed-slot offer to the next waiting patient; final confirmation is deliberately left to staff.
 9. Basic queue/waiting-list position estimate.
-10. In-app notifications for appointment events (not external SMS/email).
+10. In-app notifications for appointment events and an optional email confirmation when a patient books an appointment.
 11. Optional browser speech recognition for appointment reason (where supported).
-12. Self-healing monitor checks MongoDB connection and host memory every 30 seconds.
+12. Self-healing monitor checks MongoDB connection and host memory every 30 seconds; when enabled, it retries a failed MongoDB connection automatically while the web server remains available.
 13. Incident logging with severity, observed issue and recovery action.
 14. Admin metrics and incident review.
 15. Safe fallback/error pages and health-status page.
@@ -28,6 +28,7 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 3. Copy `.env.example` to `.env`.
 4. Edit `MONGODB_URI` in `.env` to your local MongoDB or Atlas connection string. Set a long random `SESSION_SECRET`.
    Set `SELF_HEALING_ADMIN_USERNAME` and `SELF_HEALING_ADMIN_PASSWORD` to private values for the protected self-healing panel. Do not use the example password in a deployed environment.
+   To send appointment confirmations and reschedule/cancellation emails, set `EMAIL_USER` to your Gmail address and `EMAIL_APP_PASSWORD` to a Google App Password. Enable 2-Step Verification on the Google account and create an App Password; do not use your normal Gmail password. Keep these credentials only in `.env` and never commit that file.
 5. Open the VS Code terminal in this folder and run:
    ```bash
    npm install
@@ -36,9 +37,9 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 6. Open `http://localhost:3000`.
 7. Register a patient account, then sign in.
 8. To enable demo doctors/admin tools: in MongoDB, open the `users` collection and change your own account's `role` field from `patient` to `admin`. Sign out and sign in again. Visit `/admin` and click **Seed demo doctors**.
-9. Doctors can register at `/doctor/register`, then sign in at `/doctor/login` to add working days and appointment slots at `/doctor/schedule`.
-10. Patients can book an open doctor slot at `/appointments/new`, then review `/appointments` and `/dashboard`.
-11. Open `/self-healing/login` and sign in with the configured self-healing admin credentials to view service status, run each of the six resilience checks separately, or run the full suite.
+9. Doctors can register at `/doctor/register`, then sign in at `/doctor/login` to add working days and appointment slots at `/doctor/schedule`, and reschedule or cancel upcoming appointments from `/doctor/dashboard`. Patients receive an in-app notification for doctor-initiated appointment changes.
+10. Patients can book an open doctor slot at `/appointments/new`, then review `/appointments` and `/dashboard`. Supported browsers speak a short confirmation after a successful booking or reschedule; use the replay button if browser autoplay is blocked.
+11. Use the **Self-healing** tab in the site navigation to open the protected panel. Sign in with the configured self-healing admin credentials to view service status, run each resilience check separately, or run the full suite. The **Self-healing** switch controls whether recovery actions execute; when off, checks stop after diagnosis and are labeled **Disabled**, with no recovery action or test notification sent. Its setting is stored in `data/self-healing-settings.json` and survives a server restart. When enabled, the notification scenario tests in-app delivery using a temporary notice. It does not send email or SMS; appointment confirmation and update emails are separate features.
 
 ## Folder structure
 
@@ -78,7 +79,7 @@ carenest-ejs/
 - Doctors manage weekly working days, clinic hours and optional specific appointment start times; patients can only book open times in that schedule.
 - Doctor profile photos are optional local JPG, PNG or WebP uploads, limited to 5 MB.
 - Appointment availability is checked again when the booking is submitted, but this starter does not integrate with a real hospital system.
-- SMS/email reminders, payment, medical records, and real AI inference are not implemented. Notifications are in-app database records; “AI-like” behaviour is not claimed.
+- Email confirmations and appointment update emails are sent only while self-healing is enabled. While it is off, emails are durably queued in `data/pending-appointment-emails.json` and sent when the switch is turned on; reminders are not implemented. SMS remains a dry-run, and payment, medical records, and real AI inference are not implemented. Notifications are also stored in-app; “AI-like” behaviour is not claimed.
 - The health monitor detects database disconnection and high memory usage; recovery relies on Mongoose's connection retry and safe UI fallbacks. It does not auto-restart the process or repair arbitrary application bugs.
 - The basic account lockout should be supplemented with IP-based rate limiting, CSRF protection, HTTPS, stronger admin access controls and security review before any public deployment.
 - To create an admin, manually update your own user document's `role` to `admin` in MongoDB. Never add public admin registration.
@@ -86,7 +87,9 @@ carenest-ejs/
 ## Self-healing demo suggestion
 
 1. Start the app with MongoDB available and open `/self-healing/login`.
-2. The dashboard shows live MongoDB state and the latest result for the doctor directory, notification adapter and data integrity checks.
-3. Run individual checks: isolated MongoDB reconnect, live doctor directory response, browser/server network connectivity, isolated duplicate request rejection, SMS adapter dry-run, and isolated appointment/slot reconciliation.
-4. Each scenario stays visible for at least 10 seconds, with live Detect, Diagnose, Recover, and Verify log steps and a timer. Use **Run all 6 scenarios** to execute the same checks sequentially (about one minute or longer if an external service is slow).
-5. The live database is never disconnected. Fault/recovery operations use isolated test data; network is checked rather than intentionally interrupted, and no real SMS is sent.
+2. After signing in, the protected monitor session remains available across server restarts until its session expires; it is stored locally in the ignored `data/self-healing-sessions.json` file. The dashboard shows live MongoDB state and the latest result for the doctor directory, notification adapter and data integrity checks. If MongoDB is unreachable, the panel remains available and displays a database-unavailable warning.
+3. Use the self-healing switch to turn automatic MongoDB reconnect retries on or off. Database-backed pages return an unavailable response instead of showing collection data while MongoDB is disconnected. With recovery off, scenarios are diagnosed and logged without executing their recovery actions.
+4. Run individual checks: isolated MongoDB reconnect, live doctor directory response, browser/server network connectivity, isolated duplicate request rejection, SMS adapter dry-run, and isolated appointment/slot reconciliation.
+5. Each standard scenario stays visible for at least 10 seconds. Live Detect, Diagnose, Recover, and Verify steps and a timer are shown when recovery is enabled. Use **Run all 7 scenarios** to execute the checks sequentially (about 70 seconds or longer if an external service is slow).
+6. The live database is never disconnected. Fault/recovery operations use isolated test data; network is checked rather than intentionally interrupted, and no real SMS is sent.
+7. Use **Inject chaos (disable app)** on any scenario card to simulate an app-wide outage. App routes return HTTP 503 while the protected self-healing panel remains available. With self-healing off, the simulated outage stays active until you turn it on; with it on, recovery is automatic. This demo does not physically disconnect MongoDB or stop external services.

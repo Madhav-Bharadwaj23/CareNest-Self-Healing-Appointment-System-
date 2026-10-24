@@ -8,16 +8,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const timer = document.getElementById('healingTimer');
     const progressBar = document.getElementById('healingProgressBar');
     const liveLog = document.getElementById('healingLiveLog');
+    const processImage = document.getElementById('healingProcessImage');
+    const processLabel = document.getElementById('healingProcessLabel');
     const seenLogs = new Set();
+    const scenarioButtons = scenarioForms
+      .map(form => form.querySelector('button[type="submit"]'))
+      .filter(Boolean);
+    const idleButtonLabels = new Map(
+      scenarioButtons.map(button => [button, button.textContent])
+    );
+    const idleButtonStates = new Map(
+      scenarioButtons.map(button => [button, button.disabled])
+    );
+    const resetScenarioButtons = () => {
+      scenarioButtons.forEach(button => {
+        button.disabled = idleButtonStates.get(button);
+        button.textContent = idleButtonLabels.get(button);
+      });
+    };
     const labels = {
       'database-reconnect': 'Database reconnect',
       'doctor-api': 'Doctor directory API',
       'network-connectivity': 'Network connectivity',
       'booking-idempotency': 'Duplicate booking protection',
       'notification-adapter': 'Notification adapter',
+      'notification-delivery': 'Notification self-healing',
       'appointment-reconciliation': 'Data reconciliation'
     };
+    const scenarioDurations = { 'notification-delivery': 10 };
     let polling = false;
+    let activeScenario = null;
+
+    const readJsonResponse = async response => {
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (
+          response.redirected &&
+          new URL(response.url, window.location.href).pathname === '/self-healing/login'
+        ) {
+          throw new Error('Your self-healing session expired. Sign in again and rerun the scenario.');
+        }
+
+        throw new Error(`Progress request returned HTTP ${response.status}, not JSON.`);
+      }
+
+      return response.json();
+    };
 
     const setScenarioStatus = (scenario, state, text) => {
       const badge = document.querySelector(`[data-scenario-badge="${scenario}"]`);
@@ -43,21 +79,82 @@ document.addEventListener('DOMContentLoaded', () => {
       if (seenLogs.has(key)) return;
       seenLogs.add(key);
 
-      const line = document.createElement('p');
-      line.className = 'm-0';
+      const phaseImages = {
+        detect: ['detect.svg', 'Detecting the issue'],
+        diagnose: ['diagnose.svg', 'Diagnosing the issue'],
+        heal: ['heal.svg', 'Recovering the service'],
+        verify: ['verify.svg', 'Verifying recovery'],
+        complete: entry.status === 'failed'
+          ? ['failed.svg', 'Recovery Failed']
+          : ['verify.svg', 'Recovery passed']
+      };
+      const [imageName, imageLabel] = phaseImages[entry.phase] ||
+        ['detect.svg', 'Self-healing update'];
+      const imagePath = `/images/self-healing/${imageName}`;
+      processImage.src = imagePath;
+      processImage.alt = imageLabel;
+      processLabel.textContent = imageLabel;
+
+      const line = document.createElement('div');
+      line.className = 'flex items-start gap-3';
+      const image = document.createElement('img');
+      image.className = 'h-12 w-12 shrink-0 rounded-xl bg-white object-contain';
+      image.src = imagePath;
+      image.alt = imageLabel;
+
+      const details = document.createElement('div');
+      details.className = 'min-w-0';
       const time = new Date(entry.timestamp).toLocaleTimeString();
-      const phase = {
-        detect: 'DETECT',
-        diagnose: 'DIAGNOSE',
-        heal: 'RECOVER',
-        verify: 'VERIFY',
-        complete: 'RESULT'
-      }[entry.phase] || entry.status.toUpperCase();
-      line.textContent = `[${time}] [${phase}] ${entry.message}`;
-      if (entry.status === 'failed') line.classList.add('text-red-300');
-      if (entry.phase === 'heal') line.classList.add('text-amber-300');
+      const timestamp = document.createElement('span');
+      timestamp.className = 'mr-2 text-xs text-slate-400';
+      timestamp.textContent = time;
+      const message = document.createElement('span');
+      message.className = entry.status === 'failed' ? 'text-red-300' : 'text-emerald-200';
+      message.textContent = entry.message;
+      details.append(timestamp, message);
+      line.append(image, details);
       liveLog.append(line);
       liveLog.scrollTop = liveLog.scrollHeight;
+    };
+
+    const showRecoveryFailure = (message, scenario = activeScenario) => {
+      const failureMessage = message || 'The scenario could not complete.';
+      runTitle.textContent = `Recovery Failed: ${failureMessage}`;
+      timer.textContent = 'Failed';
+      progressBar.style.width = '100%';
+      progressBar.classList.add('bg-red-600');
+      processImage.src = '/images/self-healing/failed.svg';
+      processImage.alt = 'Recovery Failed';
+      processLabel.textContent = 'Recovery Failed';
+      if (scenario && scenario !== 'all') {
+        setScenarioStatus(scenario, 'red', 'Failed');
+      }
+      appendProgressLog({
+        timestamp: new Date().toISOString(),
+        scenario: scenario && scenario !== 'all' ? scenario : 'scenario-suite',
+        status: 'failed',
+        phase: 'complete',
+        message: failureMessage
+      });
+    };
+
+    const fetchRunStatus = async () => {
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const response = await fetch('/self-healing/run-status', {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store'
+          });
+          const result = await readJsonResponse(response);
+          if (!response.ok) throw new Error(result.message || 'Could not read scenario progress.');
+          return result;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700));
+        }
+      }
+      throw lastError;
     };
 
     const pollRun = async () => {
@@ -67,24 +164,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         let running = true;
+        let finalResult = null;
         while (running) {
-          const response = await fetch('/self-healing/run-status', {
-            headers: { Accept: 'application/json' },
-            cache: 'no-store'
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.message || 'Could not read scenario progress.');
+          const result = await fetchRunStatus();
+          finalResult = result;
 
           result.logs.slice().reverse().forEach(appendProgressLog);
           running = result.running;
 
           if (running && result.currentScenario) {
-            const elapsed = Math.min(10, Math.floor(
+            const duration = scenarioDurations[result.currentScenario] || 10;
+            const elapsed = Math.min(duration, Math.floor(
               (Date.now() - new Date(result.currentStartedAt).getTime()) / 1000
             ));
             runTitle.textContent = `Recovering: ${labels[result.currentScenario] || result.currentScenario}`;
-            timer.textContent = `${elapsed} / 10 seconds`;
-            progressBar.style.width = `${elapsed * 10}%`;
+            timer.textContent = `${elapsed} / ${duration} seconds`;
+            progressBar.style.width = `${elapsed / duration * 100}%`;
             setScenarioStatus(result.currentScenario, 'yellow', 'Recovering');
           }
 
@@ -100,8 +195,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (entry.phase === 'complete') {
               setScenarioStatus(
                 entry.scenario,
-                entry.status === 'passed' ? 'green' : 'red',
-                entry.status === 'passed' ? 'Healthy' : 'Failed'
+                entry.status === 'passed'
+                  ? 'green'
+                  : entry.status === 'skipped'
+                    ? 'gray'
+                    : 'red',
+                entry.status === 'passed'
+                  ? 'Healthy'
+                  : entry.status === 'skipped'
+                    ? 'Disabled'
+                    : 'Failed'
               );
             }
           }
@@ -109,23 +212,23 @@ document.addEventListener('DOMContentLoaded', () => {
           if (running) await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        runTitle.textContent = result.error || 'Scenario run complete';
-        timer.textContent = 'Complete';
+        runTitle.textContent = finalResult?.error || 'Scenario run complete';
+        timer.textContent = finalResult?.error ? 'Failed' : 'Complete';
+        if (finalResult?.error) {
+          progressBar.classList.add('bg-red-600');
+          processImage.src = '/images/self-healing/failed.svg';
+          processImage.alt = 'Recovery Failed';
+          processLabel.textContent = 'Recovery Failed';
+        }
         progressBar.style.width = '100%';
-        scenarioForms.forEach(form => {
-          const button = form.querySelector('button[type="submit"]');
-          if (button) button.disabled = false;
-        });
+        resetScenarioButtons();
+        activeScenario = null;
         window.setTimeout(() => window.location.reload(), 900);
       } catch (error) {
-        runTitle.textContent = error.message;
-        timer.textContent = 'Unable to read progress';
-        progressBar.classList.add('bg-red-600');
-        scenarioForms.forEach(form => {
-          const button = form.querySelector('button[type="submit"]');
-          if (button) button.disabled = false;
-        });
+        showRecoveryFailure(error.message);
+        resetScenarioButtons();
         polling = false;
+        activeScenario = null;
       }
     };
 
@@ -138,15 +241,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (onlineField) onlineField.value = String(navigator.onLine);
 
         const button = form.querySelector('button[type="submit"]');
-        scenarioForms.forEach(item => {
-          const itemButton = item.querySelector('button[type="submit"]');
-          if (itemButton) itemButton.disabled = true;
+        activeScenario = form.dataset.scenario;
+        scenarioButtons.forEach(itemButton => {
+          itemButton.disabled = true;
         });
         button.textContent = 'Starting…';
         liveLog.replaceChildren();
         seenLogs.clear();
         runTitle.textContent = 'Starting scenario…';
-        timer.textContent = '0 / 10 seconds';
+        const scenarioDuration = scenarioDurations[form.dataset.scenario] || 10;
+        timer.textContent = `0 / ${scenarioDuration} seconds`;
         progressBar.style.width = '0%';
         progressBar.classList.remove('bg-red-600');
 
@@ -157,35 +261,30 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
             body
           });
-          const result = await response.json();
+          const result = await readJsonResponse(response);
           if (!response.ok) throw new Error(result.message || 'Could not start scenario.');
           runTitle.textContent = form.dataset.scenario === 'all'
-            ? 'Running all six scenarios…'
+            ? 'Running all seven scenarios…'
             : `Recovering: ${labels[form.dataset.scenario]}`;
+          button.textContent = 'Running…';
           polling = false;
           pollRun();
         } catch (error) {
-          runTitle.textContent = error.message;
-          timer.textContent = 'Not started';
-          scenarioForms.forEach(item => {
-            const itemButton = item.querySelector('button[type="submit"]');
-            if (itemButton) itemButton.disabled = false;
-          });
+          showRecoveryFailure(error.message, form.dataset.scenario);
+          resetScenarioButtons();
+          activeScenario = null;
           button.focus();
         }
       });
     });
 
-    fetch('/self-healing/run-status', { headers: { Accept: 'application/json' }, cache: 'no-store' })
-      .then(response => response.json())
-      .then(result => {
-        if (result.running) pollRun();
-      })
-      .catch(error => {
-        panel.classList.remove('hidden');
-        runTitle.textContent = `Could not restore scenario progress: ${error.message}`;
-        timer.textContent = 'Progress unavailable';
-      });
+    fetchRunStatus()
+    .then(result => {
+      if (result.running) pollRun();
+    })
+    .catch(error => {
+      console.warn('Could not restore self-healing scenario progress:', error);
+    });
   }
 
   // Mobile navigation

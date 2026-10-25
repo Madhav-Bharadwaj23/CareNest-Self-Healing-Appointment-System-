@@ -23,6 +23,7 @@
               <th>Doctor</th>
               <th>Patient</th>
               <th>Date &amp; time</th>
+              <th>Token number</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -47,6 +48,10 @@
 
                 <td>
                   <%= new Date(a.appointmentDate).toLocaleString() %>
+                </td>
+
+                <td>
+                  <b><%= Number.isInteger(a.tokenNumber) ? a.tokenNumber : 'Not available' %></b>
                 </td>
 
                 <td>

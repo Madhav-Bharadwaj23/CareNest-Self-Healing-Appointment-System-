@@ -46,6 +46,10 @@ const schema = new mongoose.Schema({
     required: true
   },
 
+  tokenNumber: {
+    type: Number
+  },
+
   reason: {
     type: String,
     default: 'General consultation'

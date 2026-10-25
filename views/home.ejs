@@ -3,7 +3,7 @@
 <%- include('partials/flash') %>
 <% if (bookingConfirmed) { %>
   <div class="wrap flash flash-success" role="status" aria-live="polite">
-    <span id="bookingConfirmationMessage">Your appointment is booked successfully.</span>
+    <span id="bookingConfirmationMessage">Your appointment is booked successfully.<% if (Number.isInteger(tokenNumber)) { %> Your token number is <b><%= tokenNumber %></b>.<% } %></span>
     <button type="button" class="btn btn-small btn-outline" id="replayBookingConfirmation">
       Play voice message
     </button>

@@ -53,7 +53,8 @@ async function deliverAppointmentEmail(email) {
       bookingId,
       patientName,
       doctorName,
-      appointmentDate
+      appointmentDate,
+      tokenNumber
     } = email;
     const formattedDate = new Date(appointmentDate).toLocaleString('en-IN', {
       dateStyle: 'medium',
@@ -73,6 +74,7 @@ async function deliverAppointmentEmail(email) {
         `Patient: ${patientName}`,
         `Doctor: ${doctorName}`,
         `Date & Time: ${formattedDate}`,
+        ...(Number.isInteger(tokenNumber) ? [`Token Number: ${tokenNumber}`] : []),
         '',
         'Please keep your Booking ID for reference.'
       ].join('\n')
@@ -86,6 +88,7 @@ async function deliverAppointmentEmail(email) {
       patientName,
       doctorName,
       appointmentDate,
+      tokenNumber,
       action
     } = email;
     const formattedDate = new Date(appointmentDate).toLocaleString('en-IN', {
@@ -109,6 +112,7 @@ async function deliverAppointmentEmail(email) {
         `Patient: ${patientName}`,
         `Doctor: ${doctorName}`,
         `Appointment date & time: ${formattedDate}`,
+        ...(Number.isInteger(tokenNumber) ? [`Token Number: ${tokenNumber}`] : []),
         '',
         'Please contact the clinic if you have questions.'
       ].join('\n')
@@ -163,7 +167,14 @@ async function flushQueuedAppointmentEmails() {
   });
 }
 
-async function sendAppointmentEmail({ to, bookingId, patientName, doctorName, appointmentDate }) {
+async function sendAppointmentEmail({
+  to,
+  bookingId,
+  patientName,
+  doctorName,
+  appointmentDate,
+  tokenNumber
+}) {
   if (!to) {
     throw new Error('Patient email address is missing');
   }
@@ -174,7 +185,8 @@ async function sendAppointmentEmail({ to, bookingId, patientName, doctorName, ap
     bookingId,
     patientName,
     doctorName,
-    appointmentDate
+    appointmentDate,
+    tokenNumber
   });
 }
 
@@ -184,6 +196,7 @@ async function sendAppointmentUpdateEmail({
   patientName,
   doctorName,
   appointmentDate,
+  tokenNumber,
   action
 }) {
   if (!to) {
@@ -201,6 +214,7 @@ async function sendAppointmentUpdateEmail({
     patientName,
     doctorName,
     appointmentDate,
+    tokenNumber,
     action
   });
 }

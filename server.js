@@ -433,7 +433,10 @@ app.get('/', async (req, res) => {
     title: 'CareNest | Caring made simpler',
     doctors,
     health: getHealth(),
-    bookingConfirmed: req.query.bookingConfirmed === '1'
+    bookingConfirmed: req.query.bookingConfirmed === '1',
+    tokenNumber: /^\d+$/.test(String(req.query.tokenNumber || ''))
+      ? Number(req.query.tokenNumber)
+      : null
   });
 });
 
@@ -1217,6 +1220,7 @@ app.post('/doctor/appointments/:id/reschedule', requireDoctor, async (req, res) 
     }
 
     appointment.appointmentDate = date;
+    appointment.tokenNumber = getAppointmentTokenNumber(doctor, time);
     await appointment.save();
 
     let inAppNotified = false;
@@ -1224,7 +1228,7 @@ app.post('/doctor/appointments/:id/reschedule', requireDoctor, async (req, res) 
       await createNotification({
         userId: appointment.patientId._id,
         type: 'appointment',
-        message: `Dr. ${doctor.name} rescheduled your appointment to ${date.toLocaleString()}.`
+        message: `Dr. ${doctor.name} rescheduled your appointment to ${date.toLocaleString()}. Your token number is ${appointment.tokenNumber}.`
       });
       inAppNotified = true;
     } catch (notificationError) {
@@ -1245,6 +1249,7 @@ app.post('/doctor/appointments/:id/reschedule', requireDoctor, async (req, res) 
         patientName: appointment.patientName,
         doctorName: doctor.name,
         appointmentDate: date,
+        tokenNumber: appointment.tokenNumber,
         action: 'rescheduled'
       });
       emailQueued = delivery.queued;
@@ -1341,6 +1346,7 @@ app.post('/doctor/appointments/:id/cancel', requireDoctor, async (req, res) => {
         patientName: appointment.patientName,
         doctorName: doctor.name,
         appointmentDate: appointment.appointmentDate,
+        tokenNumber: appointment.tokenNumber,
         action: 'cancelled'
       });
       emailQueued = delivery.queued;
@@ -1555,6 +1561,19 @@ function getDoctorSlotTimes(doctor) {
   return slots;
 }
 
+function getAppointmentTokenNumber(doctor, appointmentTime) {
+  const slotIndex = getDoctorSlotTimes(doctor)
+    .slice()
+    .sort()
+    .indexOf(appointmentTime);
+
+  if (slotIndex === -1) {
+    throw new Error('Cannot assign a token to a time outside the doctor’s schedule.');
+  }
+
+  return 101 + slotIndex;
+}
+
 app.get('/api/doctors/:doctorId/availability', requirePatient, async (req, res) => {
   try {
     const { doctorId } = req.params;
@@ -1727,12 +1746,15 @@ app.get('/appointments/:id/reschedule', requirePatient, async (req, res) => {
 
 app.post('/appointments', requirePatient, async (req, res) => {
   const offlineSync = req.get('X-Offline-Booking') === 'true';
-  const respondSuccess = (bookingId, message) => {
-    const redirectUrl = '/?bookingConfirmed=1';
+  const respondSuccess = (bookingId, tokenNumber, message) => {
+    const redirectUrl = Number.isInteger(tokenNumber)
+      ? `/?bookingConfirmed=1&tokenNumber=${tokenNumber}`
+      : '/?bookingConfirmed=1';
     if (offlineSync) {
       return res.json({
         success: true,
         bookingId,
+        tokenNumber,
         message,
         redirectUrl
       });
@@ -1789,6 +1811,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
 
         return respondSuccess(
           existingRequest.bookingId,
+          existingRequest.tokenNumber,
           'Appointment booked successfully.'
         );
       }
@@ -1885,6 +1908,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
       ).trim(),
       relationship: String(relationship || 'Self').trim(),
       appointmentDate: date,
+      tokenNumber: getAppointmentTokenNumber(doctor, appointmentTime),
       reason: String(reason || 'General consultation').trim(),
       status: 'booked'
     });
@@ -1894,7 +1918,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
       await createNotification({
         userId: req.session.user.id,
         type: 'appointment',
-        message: `Appointment booked with ${doctor.name} for ${date.toLocaleString()}.`
+        message: `Appointment booked with ${doctor.name} for ${date.toLocaleString()}. Your token number is ${appointment.tokenNumber}.`
       });
     } catch (notificationError) {
       await logIncident(
@@ -1936,7 +1960,8 @@ app.post('/appointments', requirePatient, async (req, res) => {
         bookingId: appointment.bookingId,
         patientName: appointment.patientName,
         doctorName: doctor.name,
-        appointmentDate: appointment.appointmentDate
+        appointmentDate: appointment.appointmentDate,
+        tokenNumber: appointment.tokenNumber
       });
       emailQueued = delivery.queued;
       emailSent = !delivery.queued;
@@ -1959,7 +1984,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
         : emailQueued
           ? 'Appointment booked successfully. The confirmation email is queued until self-healing is turned on.'
           : 'Appointment booked successfully, but the confirmation email could not be sent.';
-    return respondSuccess(appointment.bookingId, successMessage);
+    return respondSuccess(appointment.bookingId, appointment.tokenNumber, successMessage);
 
   } catch (error) {
     console.error('APPOINTMENT BOOKING ERROR:', error);
@@ -1974,6 +1999,7 @@ app.post('/appointments', requirePatient, async (req, res) => {
         if (savedRequest) {
           return respondSuccess(
             savedRequest.bookingId,
+            savedRequest.tokenNumber,
             'Appointment booked successfully.'
           );
         }
@@ -2119,6 +2145,7 @@ app.post('/appointments/:id/reschedule', requirePatient, async (req, res) => {
 
     appointment.doctorId = doctor._id;
     appointment.appointmentDate = date;
+    appointment.tokenNumber = getAppointmentTokenNumber(doctor, appointmentTime);
     await appointment.save();
 
     let inAppNotified = false;
@@ -2126,7 +2153,7 @@ app.post('/appointments/:id/reschedule', requirePatient, async (req, res) => {
       await createNotification({
         userId: req.session.user.id,
         type: 'appointment',
-        message: `Your appointment with ${doctor.name} has been rescheduled to ${date.toLocaleString()}.`
+        message: `Your appointment with ${doctor.name} has been rescheduled to ${date.toLocaleString()}. Your token number is ${appointment.tokenNumber}.`
       });
       inAppNotified = true;
     } catch (notificationError) {
@@ -2147,6 +2174,7 @@ app.post('/appointments/:id/reschedule', requirePatient, async (req, res) => {
         patientName: appointment.patientName,
         doctorName: doctor.name,
         appointmentDate: date,
+        tokenNumber: appointment.tokenNumber,
         action: 'rescheduled'
       });
       emailQueued = delivery.queued;

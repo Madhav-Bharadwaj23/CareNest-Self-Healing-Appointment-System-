@@ -70,6 +70,7 @@
           <thead>
             <tr>
               <th>Date and time</th>
+              <th>Token number</th>
               <th>Patient</th>
               <th>Reason</th>
               <th>Status</th>
@@ -84,6 +85,7 @@
                     appointment.appointmentDate
                   ).toLocaleString('en-IN') %>
                 </td>
+                <td><b><%= Number.isInteger(appointment.tokenNumber) ? appointment.tokenNumber : 'Not available' %></b></td>
                 <td>
                   <%= appointment.patientName %>
                   <% if (appointment.patientId) { %>

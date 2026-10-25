@@ -140,7 +140,7 @@
                 <h3><%= doctor.name %></h3>
                 <p class="doctor-specialty"><%= doctor.specialty %></p>
                 <p class="muted"><%= doctor.experience %> years experience</p>
-                <p class="doctor-hours">◷ <%= doctor.availability %></p>
+                <p class="doctor-hours">◷ <%= formatDoctorAvailability(doctor) %></p>
               </div>
             </article>
           <% }) %>

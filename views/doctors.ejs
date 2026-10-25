@@ -45,7 +45,7 @@
             <% if (doctor.education) { %>
               <p class="muted doctor-education"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i><%= doctor.education %></p>
             <% } %>
-            <p class="doctor-hours"><i class="fa-regular fa-clock" aria-hidden="true"></i><%= doctor.availability %></p>
+            <p class="doctor-hours"><i class="fa-regular fa-clock" aria-hidden="true"></i><%= formatDoctorAvailability(doctor) %></p>
           </div>
         </article>
       <% }) %>

@@ -25,6 +25,7 @@ const {
 } = require('./services/emailService');
 const { sendAppointmentSms } = require('./services/smsService');
 const PersistentSessionStore = require('./services/persistentSessionStore');
+const { formatDoctorAvailability } = require('./services/doctorAvailability');
 const {
   readRecentLogs,
   runSelfHealingScenario,
@@ -43,6 +44,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.locals.formatDoctorAvailability = formatDoctorAvailability;
 const doctorPhotoDirectory = path.join(__dirname, 'public', 'uploads', 'doctors');
 fs.mkdirSync(doctorPhotoDirectory, { recursive: true });
 const doctorPhotoUpload = multer({
@@ -1483,7 +1485,7 @@ app.post('/doctor/schedule', requireDoctor, async (req, res) => {
 
     // Keep the existing availability field compatible with older pages.
     doctor.availability =
-      `${workingDays.join(', ')}, ${startTime}â€“${endTime}`;
+      `${workingDays.join(', ')}, ${startTime} to ${endTime}`;
 
     await doctor.save();
 
@@ -2691,37 +2693,37 @@ app.post('/admin/seed-doctors', requireAdmin, async (req, res) => {
         name: 'Dr. Aditi Sharma',
         specialty: 'General Medicine',
         experience: 12,
-        availability: 'Monâ€“Fri, 9 AMâ€“1 PM'
+        availability: 'Mon-Fri, 9 AM to 1 PM'
       },
       {
         name: 'Dr. Rohan Mehta',
         specialty: 'Cardiology',
         experience: 10,
-        availability: 'Monâ€“Sat, 10 AMâ€“2 PM'
+        availability: 'Mon-Sat, 10 AM to 2 PM'
       },
       {
         name: 'Dr. Sana Khan',
         specialty: 'Orthopaedics',
         experience: 8,
-        availability: 'Tueâ€“Sat, 11 AMâ€“3 PM'
+        availability: 'Tue-Sat, 11 AM to 3 PM'
       },
       {
         name: 'Dr. Vivek Joshi',
         specialty: 'Paediatrics',
         experience: 9,
-        availability: 'Monâ€“Fri, 4 PMâ€“7 PM'
+        availability: 'Mon-Fri, 4 PM to 7 PM'
       },
       {
         name: 'Dr. Nisha Verma',
         specialty: 'Dermatology',
         experience: 7,
-        availability: 'Wedâ€“Sun, 10 AMâ€“1 PM'
+        availability: 'Wed-Sun, 10 AM to 1 PM'
       },
       {
         name: 'Dr. Arjun Singh',
         specialty: 'Neurology',
         experience: 14,
-        availability: 'Mon, Wed, Fri, 2 PMâ€“5 PM'
+        availability: 'Mon, Wed, Fri, 2 PM to 5 PM'
       }
     ];
 

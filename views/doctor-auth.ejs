@@ -23,7 +23,7 @@
     <form
       action="<%= mode === 'register' ? '/doctor/register' : '/doctor/login' %>"
       method="post"
-      <%= mode === 'register' ? 'enctype="multipart/form-data"' : '' %>
+      <% if (mode === 'register') { %>enctype="multipart/form-data"<% } %>
       class="stack-form"
     >
       <% if (mode === 'register') { %>

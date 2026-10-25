@@ -1,18 +1,26 @@
-<% if(flash){ %><div class="wrap flash flash-<%= flash.type %>" role="status"><%= flash.message %><% if(flash.speechText){ %> <button type="button" class="btn btn-small btn-outline" id="replayFlashSpeech" hidden>Play voice message</button><script>
+<% if(flash){ %><div class="wrap flash flash-<%= flash.type %>" role="status"><%= flash.message %><% if(flash.speechText){ %> <button type="button" class="btn btn-small btn-outline" id="replayFlashSpeech">Play voice message</button><script>
   (() => {
     const button = document.getElementById('replayFlashSpeech');
     const text = <%- JSON.stringify(flash.speechText) %>;
     if (!button || !('speechSynthesis' in window)) return;
 
+    const language = localStorage.getItem('carenest-language') === 'hi' ? 'hi' : 'en';
+    button.textContent = language === 'hi' ? 'आवाज़ फिर से सुनें' : 'Play voice message';
+
     function speakConfirmation() {
       window.speechSynthesis.cancel();
-      const message = new SpeechSynthesisUtterance(text);
-      message.lang = 'en-IN';
+      const message = new SpeechSynthesisUtterance(
+        language === 'hi' ? 'आपकी अपॉइंटमेंट बुक हो गई है' : text
+      );
+      message.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
+      const voice = window.speechSynthesis.getVoices().find(candidate =>
+        candidate.lang.toLowerCase().startsWith(language === 'hi' ? 'hi' : 'en-in')
+      );
+      if (voice) message.voice = voice;
       window.speechSynthesis.speak(message);
     }
 
-    button.hidden = false;
     button.addEventListener('click', speakConfirmation);
-    speakConfirmation();
+    window.addEventListener('load', speakConfirmation, { once: true });
   })();
 </script><% } %></div><% } %>

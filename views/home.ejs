@@ -1,6 +1,78 @@
 <%- include('partials/head', {title}) %>
 <%- include('partials/nav') %>
 <%- include('partials/flash') %>
+<% if (bookingConfirmed) { %>
+  <div class="wrap flash flash-success" role="status" aria-live="polite">
+    <span id="bookingConfirmationMessage">Your appointment is booked successfully.</span>
+    <button type="button" class="btn btn-small btn-outline" id="replayBookingConfirmation">
+      Play voice message
+    </button>
+    <span id="bookingVoiceStatus" class="muted" aria-live="polite"></span>
+  </div>
+  <script>
+    (() => {
+      const button = document.getElementById('replayBookingConfirmation');
+      const voiceStatus = document.getElementById('bookingVoiceStatus');
+      const language = localStorage.getItem('carenest-language') === 'hi' ? 'hi' : 'en';
+      const text = language === 'hi'
+        ? 'आपकी अपॉइंटमेंट बुक हो गई है'
+        : 'Your appointment is booked successfully.';
+
+      button.textContent = language === 'hi'
+        ? 'आवाज़ सुनें / फिर से सुनें'
+        : 'Play confirmation voice';
+
+      if (!('speechSynthesis' in window)) {
+        button.disabled = true;
+        button.textContent = language === 'hi'
+          ? 'इस ब्राउज़र में आवाज़ उपलब्ध नहीं है'
+          : 'Voice is unavailable in this browser';
+        voiceStatus.textContent = language === 'hi'
+          ? 'आवाज़ सुनने के लिए ऐसा ब्राउज़र इस्तेमाल करें जो बोलकर पढ़ने की सुविधा देता हो।'
+          : 'Use a browser that supports spoken audio to hear the confirmation.';
+        return;
+      }
+
+      function speakConfirmation() {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
+        utterance.volume = 1;
+        utterance.rate = 0.95;
+        const voices = window.speechSynthesis.getVoices();
+        const voice = voices.find(candidate =>
+          candidate.lang.toLowerCase().startsWith(language === 'hi' ? 'hi' : 'en-in')
+        );
+        if (voice) utterance.voice = voice;
+        utterance.onerror = event => {
+          console.warn('Appointment confirmation voice could not be played:', event.error);
+          voiceStatus.textContent = event.error === 'not-allowed'
+            ? (language === 'hi'
+              ? 'ब्राउज़र ने अपने-आप आवाज़ चलने से रोका है। आवाज़ सुनने के लिए ऊपर वाला बटन दबाएँ।'
+              : 'Your browser blocked autoplay. Press the button above to hear the voice.')
+            : (language === 'hi'
+              ? 'आवाज़ नहीं चल सकी। ऊपर वाला बटन दबाकर फिर कोशिश करें।'
+              : 'The voice could not play. Press the button above to try again.');
+        };
+        utterance.onstart = () => {
+          voiceStatus.textContent = language === 'hi' ? 'अपॉइंटमेंट की पुष्टि सुनाई जा रही है।' : 'Playing appointment confirmation.';
+        };
+        utterance.onend = () => {
+          voiceStatus.textContent = language === 'hi' ? 'पुष्टि संदेश पूरा हुआ।' : 'Confirmation finished.';
+        };
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      }
+
+      button.addEventListener('click', speakConfirmation);
+      voiceStatus.textContent = language === 'hi'
+        ? 'अगर आवाज़ अपने-आप न चले, तो ऊपर वाला बटन दबाएँ।'
+        : 'If voice does not start automatically, press the button above.';
+      window.addEventListener('load', () => {
+        window.setTimeout(speakConfirmation, 150);
+      }, { once: true });
+    })();
+  </script>
+<% } %>
 
 <main>
   <!-- Hero Section -->

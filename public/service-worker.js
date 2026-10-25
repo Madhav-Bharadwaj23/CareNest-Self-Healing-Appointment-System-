@@ -1,4 +1,4 @@
-const CACHE_NAME = 'carenest-offline-v2';
+const CACHE_NAME = 'carenest-offline-v4';
 const OFFLINE_BOOKING_PAGE = '/offline-booking.html';
 const OFFLINE_ASSETS = [
   OFFLINE_BOOKING_PAGE,

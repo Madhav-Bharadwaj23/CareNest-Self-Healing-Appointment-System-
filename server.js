@@ -432,7 +432,8 @@ app.get('/', async (req, res) => {
   res.render('home', {
     title: 'CareNest | Caring made simpler',
     doctors,
-    health: getHealth()
+    health: getHealth(),
+    bookingConfirmed: req.query.bookingConfirmed === '1'
   });
 });
 
@@ -1726,6 +1727,19 @@ app.get('/appointments/:id/reschedule', requirePatient, async (req, res) => {
 
 app.post('/appointments', requirePatient, async (req, res) => {
   const offlineSync = req.get('X-Offline-Booking') === 'true';
+  const respondSuccess = (bookingId, message) => {
+    const redirectUrl = '/?bookingConfirmed=1';
+    if (offlineSync) {
+      return res.json({
+        success: true,
+        bookingId,
+        message,
+        redirectUrl
+      });
+    }
+
+    return res.redirect(redirectUrl);
+  };
   const respondError = (status, message) => {
     if (offlineSync) {
       return res.status(status).json({ success: false, message });
@@ -1773,11 +1787,10 @@ app.post('/appointments', requirePatient, async (req, res) => {
           return respondError(409, 'This saved request has already been used.');
         }
 
-        return res.json({
-          success: true,
-          bookingId: existingRequest.bookingId,
-          message: 'Appointment booked successfully.'
-        });
+        return respondSuccess(
+          existingRequest.bookingId,
+          'Appointment booked successfully.'
+        );
       }
     }
 
@@ -1941,29 +1954,12 @@ app.post('/appointments', requirePatient, async (req, res) => {
       }
     }
 
-    if (offlineSync) {
-      return res.json({
-        success: true,
-        bookingId: appointment.bookingId,
-        message: emailSent
-          ? 'Appointment booked successfully. A confirmation email has been sent.'
-          : emailQueued
-            ? 'Appointment booked successfully. The confirmation email is queued until self-healing is turned on.'
-            : 'Appointment booked successfully, but the confirmation email could not be sent.'
-      });
-    }
-
-    flash(
-      req,
-      'success',
-      emailSent
+    const successMessage = emailSent
         ? 'Appointment booked successfully. A confirmation email has been sent.'
         : emailQueued
           ? 'Appointment booked successfully. The confirmation email is queued until self-healing is turned on.'
-        : 'Appointment booked successfully, but the confirmation email could not be sent.',
-      'Your Appointment is Book'
-    );
-    return res.redirect('/appointments');
+          : 'Appointment booked successfully, but the confirmation email could not be sent.';
+    return respondSuccess(appointment.bookingId, successMessage);
 
   } catch (error) {
     console.error('APPOINTMENT BOOKING ERROR:', error);
@@ -1976,11 +1972,10 @@ app.post('/appointments', requirePatient, async (req, res) => {
         }).lean();
 
         if (savedRequest) {
-          return res.json({
-            success: true,
-            bookingId: savedRequest.bookingId,
-            message: 'Appointment booked successfully.'
-          });
+          return respondSuccess(
+            savedRequest.bookingId,
+            'Appointment booked successfully.'
+          );
         }
       }
 

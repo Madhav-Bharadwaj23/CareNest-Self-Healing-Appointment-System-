@@ -156,6 +156,7 @@
       await deleteRecord(QUEUE_STORE, request.requestId);
       return {
         submitted: true,
+        redirectUrl: result.redirectUrl || '/',
         message: `${result.message}${result.bookingId ? ` Booking ID: ${result.bookingId}.` : ''}`
       };
     }
@@ -179,12 +180,11 @@
         if (request.patientId !== patientId || request.status !== 'pending') continue;
         const result = await syncRequest(request);
         if (result.submitted || result.attention) {
-          showStatus(result.message, result.submitted);
           if (result.submitted) {
-            const form = document.querySelector('[data-offline-booking-form]');
-            const submit = form?.querySelector('[type="submit"]');
-            if (submit) submit.disabled = true;
+            window.location.assign(result.redirectUrl || '/');
+            return;
           }
+          showStatus(result.message, result.submitted);
         } else if (result.pending) {
           showStatus(result.message, false);
           break;
@@ -280,11 +280,13 @@
         showStatus(offlineMessage, false);
         if (navigator.onLine) {
           const result = await syncRequest(request);
-          showStatus(result.message, Boolean(result.submitted));
           if (result.submitted) {
             delete form.dataset.offlineRequestId;
-            if (submit) submit.disabled = true;
-          } else if (submit) {
+            window.location.assign(result.redirectUrl || '/');
+            return;
+          }
+          showStatus(result.message, false);
+          if (submit) {
             submit.disabled = false;
           }
         }
@@ -335,6 +337,10 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', event => {
       if (event.data?.type === 'offline-booking-synced') {
+        if (event.data.success) {
+          window.location.assign('/?bookingConfirmed=1');
+          return;
+        }
         showStatus(event.data.message, Boolean(event.data.success));
       }
     });

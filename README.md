@@ -27,7 +27,7 @@ A modular Express + EJS + MongoDB college-project scaffold. The site is split in
 1. Install Node.js LTS and MongoDB locally, or create a MongoDB Atlas database.
 2. Extract the ZIP and open the `carenest-ejs` folder in VS Code.
 3. Copy `.env.example` to `.env`.
-4. Edit `MONGODB_URI` in `.env` to your local MongoDB or Atlas connection string. Set a long random `SESSION_SECRET`.
+4. Edit `MONGODB_URI` in `.env` to your local MongoDB or Atlas connection string. For Atlas, add your current public IP address under **Security → Network Access → IP Access List** before connecting. Set a long random `SESSION_SECRET`.
    Set `SELF_HEALING_ADMIN_USERNAME` and `SELF_HEALING_ADMIN_PASSWORD` to private values for the protected self-healing panel. Do not use the example password in a deployed environment.
    To send appointment confirmations and reschedule/cancellation emails, set `EMAIL_USER` to your Gmail address and `EMAIL_APP_PASSWORD` to a Google App Password. Enable 2-Step Verification on the Google account and create an App Password; do not use your normal Gmail password. Keep these credentials only in `.env` and never commit that file.
 5. Open the VS Code terminal in this folder and run:

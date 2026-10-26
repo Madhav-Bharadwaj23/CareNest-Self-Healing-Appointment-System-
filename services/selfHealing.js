@@ -6,7 +6,18 @@ const Incident=require('../models/Incident');
 const settingsPath=path.join(__dirname,'..','data','self-healing-settings.json');
 const state={status:'starting',lastCheck:null,database:'unknown',memoryPercent:0,actions:[],enabled:true,chaosActive:false,chaosScenario:null,chaosStartedAt:null};
 let chaosRecoveryTimer=null;
-async function logIncident(source,severity,message,recoveryAction){try{return await Incident.create({source,severity,message,recoveryAction});}catch(e){console.error('[self-healing] Could not persist incident:',e.message);return null;}}
+let incidentStorageUnavailableLogged=false;
+async function logIncident(source,severity,message,recoveryAction){
+  if(mongoose.connection.readyState!==1){
+    if(!incidentStorageUnavailableLogged){
+      console.warn('[self-healing] Incident not persisted because MongoDB is disconnected.');
+      incidentStorageUnavailableLogged=true;
+    }
+    return null;
+  }
+  incidentStorageUnavailableLogged=false;
+  try{return await Incident.create({source,severity,message,recoveryAction});}catch(e){console.error('[self-healing] Could not persist incident:',e.message);return null;}
+}
 async function loadSelfHealingSetting(){
   try{
     const settings=JSON.parse(await fs.readFile(settingsPath,'utf8'));

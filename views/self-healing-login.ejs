@@ -1,0 +1,22 @@
+<%- include('partials/head',{title}) %>
+<%- include('partials/nav') %>
+<main class="wrap page-main narrow-main">
+  <section class="panel mx-auto max-w-lg">
+    <div class="eyebrow">RESTRICTED ACCESS</div>
+    <h1 class="mt-2 text-3xl font-extrabold">Self-healing admin</h1>
+    <p class="mt-2">Sign in to run the isolated resilience checks and view their logs.</p>
+    <% if (error) { %>
+      <div class="warning-note mt-4" role="alert"><%= error %></div>
+    <% } %>
+    <form action="/self-healing/login" method="post" class="stack-form mt-5">
+      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn btn-full" type="submit">Sign in</button>
+    </form>
+    <p class="form-note mt-4">Credentials are read from <code>SELF_HEALING_ADMIN_USERNAME</code> and <code>SELF_HEALING_ADMIN_PASSWORD</code> in your local environment.</p>
+  </section>
+</main>
+<%- include('partials/footer') %>

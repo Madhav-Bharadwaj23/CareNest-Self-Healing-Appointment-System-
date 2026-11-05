@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Offline appointment request | CareNest</title>
+  <style>
+    body{margin:0;padding:24px;background:#f6f8fb;color:#1e293b;font:16px/1.5 Arial,sans-serif}
+    main{max-width:640px;margin:32px auto;padding:24px;background:#fff;border:1px solid #dbe4ea;border-radius:16px}
+    h1{margin-top:0;font-size:1.7rem}.notice{padding:14px;background:#ecfdf5;border-radius:10px;color:#065f46}
+    label{display:block;margin-top:16px;font-weight:700}input,select,textarea,button{box-sizing:border-box;width:100%;margin-top:6px;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    button{margin-top:20px;background:#0f766e;color:#fff;border:0;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}.muted{color:#64748b;font-size:.9rem}
+    #offlineBookingStatus{min-height:1.5em;margin-top:16px;font-weight:700}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Appointment request</h1>
+    <p class="notice">Complete this form to save an appointment request on this device. It will not be confirmed until it is submitted online and the clinic checks availability.</p>
+    <p class="muted">This request is stored on this device. When internet returns, sign in to the same patient account to submit it. The clinic will check the requested time before confirming.</p>
+    <form id="offlineAppointmentForm" data-offline-booking-form>
+      <label for="patientName">Patient full name</label>
+      <input id="patientName" name="patientName" autocomplete="name" maxlength="100" required>
+
+      <label for="relationship">Relationship to you</label>
+      <select id="relationship" name="relationship">
+        <option>Self</option><option>Parent</option><option>Spouse</option><option>Child</option><option>Other family member</option>
+      </select>
+
+      <label for="doctorId">Doctor</label>
+      <select id="doctorId" name="doctorId" required>
+        <option value="">No saved doctors available</option>
+      </select>
+      <p class="muted">The doctor list is available offline only if this device loaded the booking page while online before.</p>
+
+      <label for="appointmentDay">Requested appointment date</label>
+      <input id="appointmentDay" name="appointmentDay" type="date" required>
+
+      <label for="appointmentTime">Requested appointment time</label>
+      <input id="appointmentTime" name="appointmentTime" type="time" required>
+      <p class="muted">Time availability cannot be checked offline. Your request is not a confirmed reservation.</p>
+
+      <label for="reason">Reason for visit (optional)</label>
+      <textarea id="reason" name="reason" rows="3" maxlength="1000"></textarea>
+
+      <button type="submit" disabled>Save appointment request</button>
+      <p id="offlineBookingStatus" role="status" aria-live="polite"></p>
+    </form>
+    <p class="muted"><a href="/appointments/new">Try the online booking page again</a></p>
+  </main>
+  <script src="/js/appointment-offline.js"></script>
+</body>
+</html>

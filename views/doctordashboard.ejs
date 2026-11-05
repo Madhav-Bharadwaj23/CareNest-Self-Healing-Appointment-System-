@@ -1,0 +1,155 @@
+
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <section class="page-heading">
+    <div>
+      <div class="eyebrow">DOCTOR WORKSPACE</div>
+      <h1>Welcome, <%= doctor.name %></h1>
+      <p>
+        <%= doctor.specialty %> ·
+        <%= doctor.experience %> years of experience
+      </p>
+      <% if (doctor.education) { %>
+        <p><%= doctor.education %></p>
+      <% } %>
+    </div>
+    <% const imageUrl = doctor.imageUrl || doctor.profileImage; %>
+    <% if (imageUrl) { %>
+      <img
+        src="<%= imageUrl %>"
+        alt="Profile photo of <%= doctor.name %>"
+        class="h-20 w-20 rounded-2xl object-cover"
+      >
+    <% } %>
+    <div class="doctor-dashboard-actions">
+      <a class="btn btn-outline" href="/doctor/profile/edit">
+        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i> Edit profile
+      </a>
+      <span class="health-badge health-healthy">
+        <i></i> Doctor Portal
+      </span>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    <article class="stat-card">
+      <small>Today's appointments</small>
+      <strong><%= todayAppointments.length %></strong>
+      <span>Scheduled for today</span>
+    </article>
+
+    <article class="stat-card">
+      <small>All appointments</small>
+      <strong><%= appointments.length %></strong>
+      <span>Latest 100 records</span>
+    </article>
+
+    <article class="stat-card">
+      <small>Specialty</small>
+      <strong style="font-size: 20px;">
+        <%= doctor.specialty %>
+      </strong>
+      <span>Your department</span>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Appointment schedule</h2>
+        <p>Your upcoming and previous appointments.</p>
+      </div>
+    </div>
+
+    <% if (appointments.length) { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date and time</th>
+              <th>Token number</th>
+              <th>Patient</th>
+              <th>Reason</th>
+              <th>Status</th>
+              <th>Payment Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% appointments.forEach(appointment => { %>
+              <tr>
+                <td>
+                  <%= new Date(
+                    appointment.appointmentDate
+                  ).toLocaleString('en-IN') %>
+                </td>
+                <td><b><%= Number.isInteger(appointment.tokenNumber) ? appointment.tokenNumber : 'Not available' %></b></td>
+                <td>
+                  <%= appointment.patientName %>
+                  <% if (appointment.patientId) { %>
+                    <small>
+                      <%= appointment.patientId.email %>
+                    </small>
+                  <% } %>
+                </td>
+                <td><%= appointment.reason %></td>
+                <td>
+                  <span class="pill">
+                    <%= appointment.status %>
+                  </span>
+                </td>
+                <td>
+                  <% if (appointment.paymentStatus === 'paid' || appointment.paymentStatus === 'patient_confirmed') { %>
+                    <span class="pill pill-booked">Success</span>
+                  <% } else if (appointment.status === 'booked') { %>
+                    <span class="pill pill-warning">Pending</span>
+                  <% } else { %>
+                    <span class="muted">-</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (appointment.status === 'booked' &&
+                    new Date(appointment.appointmentDate) > new Date()) { %>
+                    <form
+                      action="/doctor/appointments/<%= appointment._id %>/reschedule"
+                      method="post"
+                      class="stack-form"
+                    >
+                      <label>
+                        New date
+                        <input type="date" name="appointmentDay" required>
+                      </label>
+                      <label>
+                        New time
+                        <input type="time" name="appointmentTime" required>
+                      </label>
+                      <button class="btn btn-small" type="submit">Reschedule</button>
+                    </form>
+                    <form
+                      action="/doctor/appointments/<%= appointment._id %>/cancel"
+                      method="post"
+                      onsubmit="return confirm('Cancel this appointment and notify the patient?')"
+                    >
+                      <button class="btn btn-small btn-outline" type="submit">Cancel</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <p class="muted">
+        No appointments are linked to your account yet.
+      </p>
+    <% } %>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

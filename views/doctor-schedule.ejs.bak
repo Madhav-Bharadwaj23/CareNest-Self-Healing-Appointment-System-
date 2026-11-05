@@ -1,0 +1,26 @@
+
+<%- include('partials/head', { title }) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main">
+  <section class="page-heading">
+    <div>
+      <div class="eyebrow">DOCTOR PORTAL</div>
+      <h1>Manage Availability</h1>
+      <p>Welcome, <%= doctor.name %>. Your specialty is <%= doctor.specialty %>.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Your current availability</h2>
+    <p><strong>Schedule:</strong> <%= doctor.availability %></p>
+    <p class="muted">
+      Your current availability is displayed here. Saving specific days
+      and appointment time slots will be added in the next step.
+    </p>
+    <a href="/doctor/dashboard" class="btn">Back to Dashboard</a>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

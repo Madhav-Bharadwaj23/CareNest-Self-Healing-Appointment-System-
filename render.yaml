@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: carenest
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: SELF_HEALING_ADMIN_USERNAME
+        sync: false
+      - key: SELF_HEALING_ADMIN_PASSWORD
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_APP_PASSWORD
+        sync: false
+    disk:
+      name: carenest-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

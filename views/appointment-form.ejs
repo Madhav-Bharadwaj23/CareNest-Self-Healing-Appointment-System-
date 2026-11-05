@@ -1,0 +1,344 @@
+<%- include('partials/head',{title}) %>
+<%- include('partials/nav') %>
+<%- include('partials/flash') %>
+
+<main class="wrap page-main narrow-main appointment-page">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">YOUR NEXT STEP</div>
+      <h1><%= appointment ? 'Reschedule appointment' : 'Book an appointment' %></h1>
+      <p><%= appointment ? 'Choose any active doctor and an available time. Patient details will remain unchanged.' : 'Choose from the appointment times your doctor has made available.' %></p>
+    </div>
+  </div>
+
+  <div class="panel form-panel appointment-panel">
+    <form
+      action="<%= appointment ? `/appointments/${appointment._id}/reschedule` : '/appointments' %>"
+      method="post"
+      class="stack-form"
+      id="appointmentForm"
+      data-appointment-id="<%= appointment ? appointment._id : '' %>"
+      data-appointment-date="<%= appointment ? appointment.appointmentDate.toISOString() : '' %>"
+      data-patient-id="<%= currentUser.id %>"
+      <%= appointment ? '' : 'data-offline-booking-form' %>
+    >
+      <input id="appointmentDate" name="appointmentDate" type="datetime-local" hidden>
+
+      <section class="patient-details-section">
+        <div class="form-section-heading">
+          <span class="form-step">01</span>
+          <div>
+            <h2>Patient details</h2>
+            <p>Tell us who the appointment is for.</p>
+          </div>
+        </div>
+        <div class="patient-fields">
+          <div>
+            <label for="patientName">Patient full name</label>
+            <input id="patientName" name="patientName" value="<%= appointment ? appointment.patientName : currentUser.fullName %>" required maxlength="100" autocomplete="name" <%= appointment ? 'readonly' : '' %>>
+          </div>
+          <div>
+            <label for="relationship">Relationship to you</label>
+            <select name="relationship" id="relationship" <%= appointment ? 'disabled' : '' %>>
+              <% const relationship = appointment ? appointment.relationship : 'Self'; %>
+              <% ['Self', 'Parent', 'Spouse', 'Child', 'Other family member'].forEach(value => { %>
+                <option <%= relationship === value ? 'selected' : '' %>><%= value %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="appointment-selection-section">
+        <div class="form-section-heading">
+          <span class="form-step">02</span>
+          <div>
+            <h2>Choose your specialist</h2>
+            <p>Select a doctor to see their profile and available times.</p>
+          </div>
+        </div>
+        <label for="doctorId">Doctor</label>
+        <select id="doctorId" name="doctorId" required>
+          <option value="">Select a doctor</option>
+          <% doctors.forEach(d => { %>
+            <option
+              value="<%= d._id %>"
+              data-name="<%= d.name %>"
+              data-specialty="<%= d.specialty %>"
+              data-education="<%= d.education || '' %>"
+              data-experience="<%= d.experience || 0 %>"
+              data-image="<%= d.imageUrl || d.profileImage || '' %>"
+              data-upi-id="<%= d.upiId || '' %>"
+              data-consultation-fee="<%= d.consultationFee || 0 %>"
+              <%= appointment && String(appointment.doctorId) === String(d._id) ? 'selected' : '' %>>
+              <%= d.name %> — <%= d.specialty %><%= d.education ? ` · ${d.education}` : '' %>
+            </option>
+          <% }) %>
+        </select>
+        <article id="doctorProfilePreview" class="appointment-doctor-preview" aria-live="polite" hidden>
+          <img id="appointmentDoctorImage" src="" alt="">
+          <div>
+            <p class="doctor-preview-label">Your specialist</p>
+            <h3 id="appointmentDoctorName"></h3>
+            <p id="appointmentDoctorMeta"></p>
+          </div>
+        </article>
+      </section>
+      <% if (!doctors.length) { %>
+        <p class="form-note">No doctors are available yet. Ask an administrator to seed the doctor list.</p>
+      <% } %>
+
+      <label for="appointmentDay">Appointment date</label>
+      <input id="appointmentDay" name="appointmentDay" type="date" required>
+
+      <label for="appointmentTime">Available appointment time</label>
+      <select id="appointmentTime" name="appointmentTime" required disabled>
+        <option value="">Choose a doctor and date first</option>
+      </select>
+      <p id="availabilityMessage" class="form-note" role="status" aria-live="polite">
+        Select a doctor and date to see available times.
+      </p>
+
+      <label for="reason">Reason for visit</label>
+      <textarea id="reason" name="reason" rows="3" placeholder="Briefly describe what you need help with" <%= appointment ? 'readonly' : '' %>><%= appointment ? appointment.reason : '' %></textarea>
+
+      <% if (!appointment) { %>
+        <div class="voice-row">
+          <button type="button" class="btn btn-outline btn-small" id="voiceReason">Use voice to fill reason</button>
+          <span id="voiceStatus" class="muted">Optional voice input, if supported by your browser.</span>
+        </div>
+      <% } %>
+
+      <% if (!appointment) { %>
+        <fieldset class="payment-method-section">
+          <legend>Choose payment method</legend>
+          <label>
+            <input type="radio" name="paymentMethod" value="counter" required>
+            Pay at counter - payment pending
+          </label>
+          <label>
+            <input type="radio" name="paymentMethod" value="online" required>
+            Pay online - show UPI QR
+          </label>
+        </fieldset>
+
+        <section id="upiPaymentSection" class="upi-payment-section" hidden>
+          <h2>Pay consultation fee</h2>
+          <p>Scan this QR in your UPI app, complete the payment, and then confirm it below.</p>
+          <img id="upiQrImage" src="" alt="UPI payment QR code">
+          <p><strong id="upiDoctorName"></strong></p>
+          <p>UPI ID: <strong id="upiIdText"></strong></p>
+          <p>Consultation fee: <strong id="upiFeeText"></strong></p>
+          <label class="payment-confirmation">
+            <input id="paymentConfirmed" name="paymentConfirmed" type="checkbox" value="true">
+            Payment made
+          </label>
+        </section>
+      <% } %>
+
+      <button class="btn btn-full" type="submit" <%= !doctors.length ? 'disabled' : '' %>>
+        <%= appointment ? 'Reschedule appointment' : 'Book selected time and continue to payment' %> <span>→</span>
+      </button>
+      <% if (!appointment) { %>
+        <p id="offlineBookingStatus" class="form-note" role="status" aria-live="polite"></p>
+        <p class="form-note"><a href="/offline-booking.html">Open the offline appointment request form</a></p>
+      <% } %>
+      <p class="form-note">Only open times in the doctor's schedule can be booked. Please contact the hospital for urgent needs.</p>
+    </form>
+  </div>
+</main>
+
+<script>
+  (() => {
+    const doctor = document.getElementById('doctorId');
+    const doctorPreview = document.getElementById('doctorProfilePreview');
+    const doctorImage = document.getElementById('appointmentDoctorImage');
+    const doctorName = document.getElementById('appointmentDoctorName');
+    const doctorMeta = document.getElementById('appointmentDoctorMeta');
+    const day = document.getElementById('appointmentDay');
+    const time = document.getElementById('appointmentTime');
+    const appointmentDate = document.getElementById('appointmentDate');
+    const message = document.getElementById('availabilityMessage');
+    const form = document.getElementById('appointmentForm');
+    const appointmentId = form.dataset.appointmentId;
+    const previousDate = form.dataset.appointmentDate
+      ? new Date(form.dataset.appointmentDate)
+      : null;
+    const minDate = new Date();
+    minDate.setMinutes(minDate.getMinutes() - minDate.getTimezoneOffset());
+    day.min = minDate.toISOString().slice(0, 10);
+
+    function updateDoctorPreview() {
+      const selected = doctor.selectedOptions[0];
+      if (!selected || !selected.value) {
+        doctorPreview.hidden = true;
+        return;
+      }
+
+      const name = selected.dataset.name;
+      const specialty = selected.dataset.specialty;
+      const education = selected.dataset.education;
+      const experience = selected.dataset.experience;
+      const image = selected.dataset.image;
+
+      doctorName.textContent = name;
+      doctorMeta.textContent = [
+        specialty,
+        education,
+        experience ? `${experience} years experience` : ''
+      ].filter(Boolean).join(' · ');
+
+      if (image) {
+        doctorImage.src = image;
+        doctorImage.alt = `Dr. ${name}`;
+        doctorImage.hidden = false;
+      } else {
+        doctorImage.removeAttribute('src');
+        doctorImage.alt = '';
+        doctorImage.hidden = true;
+      }
+
+      doctorPreview.hidden = false;
+    }
+
+    async function loadAvailableTimes(preferredTime = '') {
+      time.replaceChildren(new Option('Loading available times…', ''));
+      time.disabled = true;
+
+      if (!doctor.value || !day.value) {
+        time.replaceChildren(new Option('Choose a doctor and date first', ''));
+        message.textContent = 'Select a doctor and date to see available times.';
+        return;
+      }
+
+      try {
+        const query = new URLSearchParams({ date: day.value });
+        if (appointmentId) query.set('appointmentId', appointmentId);
+        const response = await fetch(
+          `/api/doctors/${encodeURIComponent(doctor.value)}/availability?${query}`
+        );
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Could not load appointment times.');
+        }
+
+        time.replaceChildren(new Option(
+          result.slots.length ? 'Choose an available time' : 'No available times',
+          ''
+        ));
+        result.slots.forEach(slot => time.add(new Option(slot, slot)));
+        if (preferredTime && result.slots.includes(preferredTime)) {
+          time.value = preferredTime;
+          appointmentDate.value = `${day.value}T${preferredTime}`;
+        }
+        time.disabled = result.slots.length === 0;
+        message.textContent = result.message;
+        window.dispatchEvent(new CustomEvent('appointment-slots-loaded', {
+          detail: { doctorId: doctor.value, date: day.value, slots: result.slots }
+        }));
+      } catch (error) {
+        const savedSlots = window.CareNestOffline
+          ? await window.CareNestOffline.getAvailability(doctor.value, day.value)
+          : null;
+
+        if (!navigator.onLine && savedSlots) {
+          time.replaceChildren(new Option('Choose a previously loaded time', ''));
+          savedSlots.forEach(slot => time.add(new Option(slot, slot)));
+          time.disabled = savedSlots.length === 0;
+          message.textContent = 'Offline: these times were last checked while online. Availability will be checked again when submitted.';
+        } else {
+          time.replaceChildren(new Option('Times could not be loaded', ''));
+          message.textContent = error.message;
+        }
+      }
+    }
+
+    doctor.addEventListener('change', () => {
+      appointmentDate.value = '';
+      updateDoctorPreview();
+      loadAvailableTimes();
+    });
+    day.addEventListener('change', () => {
+      appointmentDate.value = '';
+      loadAvailableTimes();
+    });
+    time.addEventListener('change', () => {
+      appointmentDate.value = day.value && time.value
+        ? `${day.value}T${time.value}`
+        : '';
+    });
+    appointmentDate.addEventListener('change', async () => {
+      if (!appointmentDate.value) return;
+
+      day.value = appointmentDate.value.slice(0, 10);
+      await loadAvailableTimes();
+      time.value = appointmentDate.value.slice(11, 16);
+    });
+    window.addEventListener('appointment-slots-loaded', () => {
+      if (appointmentDate.value) {
+        time.value = appointmentDate.value.slice(11, 16);
+      }
+    });
+    async function showOnlinePayment() {
+      const paymentSection = document.getElementById('upiPaymentSection');
+      if (!doctor.value) return;
+
+      try {
+        const response = await fetch(`/appointments/upi/${encodeURIComponent(doctor.value)}`);
+        const payment = await response.json();
+        if (!response.ok) throw new Error(payment.error || 'UPI payment details are unavailable.');
+        document.getElementById('upiQrImage').src = payment.qrDataUrl;
+        document.getElementById('upiDoctorName').textContent = payment.doctorName;
+        document.getElementById('upiIdText').textContent = payment.upiId;
+        document.getElementById('upiFeeText').textContent = `₹${Number(payment.fee).toFixed(2)}`;
+        paymentSection.hidden = false;
+      } catch (error) {
+        paymentSection.hidden = true;
+        message.textContent = error.message;
+      }
+    }
+
+    document.querySelectorAll('input[name="paymentMethod"]').forEach(input => {
+      input.addEventListener('change', () => {
+        document.getElementById('upiPaymentSection').hidden = input.value !== 'online';
+        document.getElementById('paymentConfirmed').checked = false;
+        if (input.value === 'online') showOnlinePayment();
+      });
+    });
+
+    form.addEventListener('submit', event => {
+      if (!doctor.value || !day.value || !time.value) {
+        event.preventDefault();
+        message.textContent = 'Please select an available doctor, date and appointment time.';
+        return;
+      }
+
+      if (!appointmentId) {
+        const paymentMethod = form.querySelector('input[name="paymentMethod"]:checked')?.value;
+        const paymentConfirmed = document.getElementById('paymentConfirmed');
+        if (!paymentMethod) {
+          event.preventDefault();
+          message.textContent = 'Choose Pay at counter or Pay online.';
+        } else if (paymentMethod === 'online' && !paymentConfirmed.checked) {
+          event.preventDefault();
+          message.textContent = 'Complete the UPI payment, then select I have made the payment.';
+        }
+      }
+    });
+
+    if (previousDate && !Number.isNaN(previousDate.getTime())) {
+      const previousDay = [
+        previousDate.getFullYear(),
+        String(previousDate.getMonth() + 1).padStart(2, '0'),
+        String(previousDate.getDate()).padStart(2, '0')
+      ].join('-');
+      const previousTime = `${String(previousDate.getHours()).padStart(2, '0')}:${String(previousDate.getMinutes()).padStart(2, '0')}`;
+      day.value = previousDay;
+      loadAvailableTimes(previousTime);
+    }
+    updateDoctorPreview();
+  })();
+</script>
+
+<%- include('partials/footer') %>
